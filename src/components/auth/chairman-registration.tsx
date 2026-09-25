@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { z } from "zod";
 import {
   registrationSchema,
@@ -14,10 +14,21 @@ const challengeSchema = z.object({
 });
 
 const registrationResponseSchema = z.object({
+  delivery: z.object({
+    email: z.enum(["accepted", "development_console", "unconfirmed"]),
+  }).optional(),
   verification: z.object({
     email: challengeSchema,
     phone: challengeSchema,
   }),
+});
+
+const resendResponseSchema = z.object({
+  verification: z.object({ email: challengeSchema }),
+  delivery: z.object({
+    email: z.enum(["accepted", "development_console", "unconfirmed"]),
+  }),
+  retryAfterSeconds: z.number().int().min(1).max(3600),
 });
 
 const verificationResponseSchema = z.object({
@@ -104,6 +115,16 @@ export default function ChairmanRegistration() {
     phone: false,
   });
   const [notice, setNotice] = useState("");
+  const [emailResendSeconds, setEmailResendSeconds] = useState(0);
+  const emailCodeInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (emailResendSeconds <= 0) return;
+    const timer = window.setTimeout(() => {
+      setEmailResendSeconds((seconds) => Math.max(0, seconds - 1));
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [emailResendSeconds]);
 
   const steps = ["Your details", "Verify contacts", "Account ready"];
 
@@ -151,7 +172,7 @@ export default function ChairmanRegistration() {
         headers: { "Content-Type": "application/json" },
         // Send original input; the server performs normalization.
         body: JSON.stringify(input),
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(45000),
       });
 
       const body: unknown = await response.json();
@@ -172,12 +193,69 @@ export default function ChairmanRegistration() {
 
       setChallenges(result.data.verification);
       form.reset();
-      setNotice("");
+      const message = responseMessage(
+        body, "Account created. Verify your email and mobile number.",
+      );
+      if (result.data.delivery?.email === "unconfirmed") {
+        setError(message + " You can request a new email code after the countdown.");
+        setNotice("");
+      } else {
+        setNotice(message);
+      }
+      setEmailResendSeconds(60);
       setStep(1);
     } catch {
       setError(
-        "We could not confirm whether registration completed. Check your connection and server terminal before retrying.",
+        "We could not confirm whether registration completed. Keep this page open and check your connection.",
       );
+    } finally {
+      requestInProgress.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function resendEmail() {
+    if (requestInProgress.current || !challenges || verified.email || emailResendSeconds > 0) return;
+
+    requestInProgress.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await fetch("/api/auth/verify/resend-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ challengeId: challenges.email.challengeId }),
+        signal: AbortSignal.timeout(45000),
+      });
+      const body: unknown = await response.json();
+
+      if (!response.ok) {
+        const retry = Number(response.headers.get("Retry-After"));
+        setEmailResendSeconds(Number.isFinite(retry) && retry > 0
+          ? Math.min(3600, Math.ceil(retry)) : 60);
+        setError(responseMessage(body, "Email code resend could not be confirmed."));
+        return;
+      }
+
+      const result = resendResponseSchema.safeParse(body);
+      if (!result.success) throw new Error("Unexpected resend response");
+
+      setChallenges((current) => current
+        ? { ...current, email: result.data.verification.email } : current);
+      setEmailResendSeconds(result.data.retryAfterSeconds);
+      if (emailCodeInput.current) emailCodeInput.current.value = "";
+
+      const message = responseMessage(body, "Use the newest email code.");
+      if (result.data.delivery.email === "unconfirmed") {
+        setError(message);
+      } else {
+        setNotice(message);
+      }
+    } catch {
+      setEmailResendSeconds(60);
+      setError("We could not confirm the resend. Keep this page open and request another code after the countdown.");
     } finally {
       requestInProgress.current = false;
       setBusy(false);
@@ -263,7 +341,7 @@ export default function ChairmanRegistration() {
       }
     } catch {
       setError(
-        "We could not confirm the verification result. Check the server terminal before retrying.",
+        "We could not confirm the verification result. Check your connection before retrying.",
       );
     } finally {
       requestInProgress.current = false;
@@ -441,6 +519,7 @@ export default function ChairmanRegistration() {
 
                       <input
                         id={`${channel}-code`}
+                        ref={channel === "email" ? emailCodeInput : undefined}
                         name="code"
                         type="text"
                         inputMode="numeric"
@@ -459,6 +538,24 @@ export default function ChairmanRegistration() {
                           ? "Please wait…"
                           : `Verify ${channel === "phone" ? "mobile" : "email"}`}
                       </button>
+
+                      {channel === "email" && (
+                        <div className="mt-4 border-t border-slate-100 pt-4">
+                          <button
+                            type="button"
+                            disabled={busy || emailResendSeconds > 0}
+                            onClick={() => void resendEmail()}
+                            className="rounded-lg px-2 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {emailResendSeconds > 0
+                              ? `Resend email code in ${emailResendSeconds}s`
+                              : "Resend email code"}
+                          </button>
+                          <p className="mt-1 text-xs leading-5 text-slate-500">
+                            Check your spam folder. Requesting a new code replaces the previous one.
+                          </p>
+                        </div>
+                      )}
                     </fieldset>
                   )}
                 </form>

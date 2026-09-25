@@ -1,10 +1,13 @@
+import {
+  deliverRegistrationCodes,
+  registrationDeliveryMode,
+} from "@/lib/server/auth/registration-delivery";
+import { checkRequestOrigin, HttpError } from "@/lib/server/http";
 import { registrationSchema } from "@/lib/validation/auth";
 import { getDatabase } from "@/lib/server/db";
 import { hashPassword } from "@/lib/server/auth/password";
 import {
   createVerificationCode,
-  deliverDevelopmentCode,
-  isConsoleDeliveryAllowed,
 } from "@/lib/server/auth/verification-code";
 
 export const runtime = "nodejs";
@@ -75,16 +78,12 @@ async function readJsonBody(request: Request): Promise<unknown> {
 }
 
 export async function POST(request: Request) {
-  if (
-    !isConsoleDeliveryAllowed(
-      process.env.NODE_ENV,
-      process.env.VERIFICATION_DELIVERY,
-    )
-  ) {
+  if (!registrationDeliveryMode()) {
     return json({ message: "Registration is not available." }, 503);
   }
 
   try {
+    checkRequestOrigin(request);
     const body = await readJsonBody(request);
     const validation = registrationSchema.safeParse(body);
 
@@ -175,12 +174,18 @@ export async function POST(request: Request) {
       client.release();
     }
 
-    deliverDevelopmentCode("email", emailChallenge);
-    deliverDevelopmentCode("sms", phoneChallenge);
+    const delivery = await deliverRegistrationCodes(
+      email,
+      emailChallenge,
+      phoneChallenge,
+    );
 
     return json(
       {
-        message: "Account created. Verify your email and mobile number.",
+        message: delivery.email === "unconfirmed"
+          ? "Your account was created, but email delivery was not confirmed. Keep this verification page open."
+          : "Account created. Verify your email and mobile number.",
+        delivery,
         userId,
         status: "pending_verification",
         verification: {
@@ -197,6 +202,10 @@ export async function POST(request: Request) {
       201,
     );
   } catch (error) {
+    if (error instanceof HttpError) {
+      return json({ message: error.message }, error.status);
+    }
+
     if (error instanceof RequestBodyError) {
       return json({ message: error.message }, error.status);
     }

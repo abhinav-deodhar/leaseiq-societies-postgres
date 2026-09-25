@@ -1,7 +1,10 @@
+import {
+  registrationDeliveryMode,
+} from "@/lib/server/auth/registration-delivery";
+import { checkRequestOrigin, HttpError } from "@/lib/server/http";
 import { z } from "zod";
 import { getDatabase } from "@/lib/server/db";
 import {
-  isConsoleDeliveryAllowed,
   matchesVerificationCode,
 } from "@/lib/server/auth/verification-code";
 
@@ -71,13 +74,17 @@ async function readBody(request: Request): Promise<unknown> {
 }
 
 export async function POST(request: Request) {
-  if (
-    !isConsoleDeliveryAllowed(
-      process.env.NODE_ENV,
-      process.env.VERIFICATION_DELIVERY,
-    )
-  ) {
+  if (!registrationDeliveryMode()) {
     return json({ message: "Verification is not available." }, 503);
+  }
+
+  try {
+    checkRequestOrigin(request);
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return json({ message: error.message }, error.status);
+    }
+    return json({ message: "Verification is unavailable." }, 503);
   }
 
   const contentType = request.headers
