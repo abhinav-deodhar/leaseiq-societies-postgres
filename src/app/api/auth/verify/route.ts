@@ -259,7 +259,16 @@ export async function POST(request: Request) {
         `UPDATE users
          SET status = CASE
                WHEN email_verified_at IS NOT NULL
-                AND phone_verified_at IS NOT NULL
+                AND (
+                  phone_verified_at IS NOT NULL
+                  OR (
+                    verification_policy = 'email_only'
+                    AND NOT EXISTS (
+                      SELECT 1 FROM platform_admins pa
+                      WHERE pa.user_id = users.id
+                    )
+                  )
+                )
                THEN 'active'
                ELSE status
              END,

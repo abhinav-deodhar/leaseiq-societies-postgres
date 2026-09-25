@@ -52,3 +52,25 @@ test("production cannot accidentally enable console phone verification", () => {
     }), null);
   }
 });
+
+test("production email-only registration requires explicit opt-in", () => {
+  assert.equal(registrationDeliveryMode({
+    ...gmail,
+    NODE_ENV: "production",
+    REGISTRATION_VERIFICATION: "email_only",
+  }), "gmail");
+
+  assert.equal(registrationDeliveryMode({
+    ...gmail,
+    NODE_ENV: "production",
+    REGISTRATION_VERIFICATION: "email_only",
+    VERIFICATION_DELIVERY: "console",
+  }), null);
+
+  assert.equal(registrationDeliveryMode({
+    ...gmail,
+    NODE_ENV: "production",
+    REGISTRATION_VERIFICATION: "email_only",
+    GMAIL_REFRESH_TOKEN: "",
+  }), null);
+});

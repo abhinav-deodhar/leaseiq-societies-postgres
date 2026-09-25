@@ -10,10 +10,18 @@ type Challenge = ReturnType<typeof createVerificationCode>;
 export function registrationDeliveryMode(
   environment: Partial<NodeJS.ProcessEnv> = process.env,
 ): "console" | "gmail" | null {
-  // Production remains closed until real SMS delivery and recovery are ready.
-  if (environment.NODE_ENV !== "development") return null;
+  if (
+    environment.NODE_ENV === "development" &&
+    environment.VERIFICATION_DELIVERY === "console"
+  ) return "console";
 
-  if (environment.VERIFICATION_DELIVERY === "console") return "console";
+  const permitted =
+    environment.NODE_ENV === "development" ||
+    (
+      environment.NODE_ENV === "production" &&
+      environment.REGISTRATION_VERIFICATION === "email_only"
+    );
+  if (!permitted) return null;
 
   if (
     environment.VERIFICATION_DELIVERY === "gmail" &&
@@ -51,40 +59,21 @@ export async function deliverRegistrationEmail(
 export async function deliverRegistrationCodes(
   destination: string,
   emailChallenge: Challenge,
-  phoneChallenge: Challenge,
 ) {
-  const mode = registrationDeliveryMode();
-  if (!mode) throw new Error("Registration delivery is unavailable.");
-
-  if (mode === "console") {
-    deliverDevelopmentCode("email", emailChallenge);
-    deliverDevelopmentCode("sms", phoneChallenge);
-    return {
-      email: "development_console" as const,
-      phone: "development_console" as const,
-    };
+  if (!registrationDeliveryMode()) {
+    throw new Error("Registration delivery is unavailable.");
   }
 
-  // This branch is reachable only in explicitly configured development.
-  console.info(
-    `[DEV VERIFICATION] sms | request=${phoneChallenge.id} | code=${phoneChallenge.code}`,
-  );
-
   try {
-    await deliverRegistrationEmail(destination, emailChallenge);
-
     return {
-      email: "accepted" as const,
-      phone: "development_console" as const,
+      email: await deliverRegistrationEmail(destination, emailChallenge),
+      phone: "not_requested" as const,
     };
   } catch {
-    // The account and challenge already exist. Return their IDs rather than
-    // reporting account creation as failed or automatically resending.
     console.error("Email verification delivery was not confirmed.");
-
     return {
       email: "unconfirmed" as const,
-      phone: "development_console" as const,
+      phone: "not_requested" as const,
     };
   }
 }

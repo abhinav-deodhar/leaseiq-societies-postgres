@@ -47,9 +47,27 @@ test("sends the OTP as a MIME email and returns Gmail's message ID", async () =>
   const mime = Buffer.from(requestBody.raw, "base64url").toString("utf8");
   assert.match(mime, /From: LeaseIQ Communications <leaseiq@example.com>/);
   assert.match(mime, /To: recipient@example.com/);
-  const encodedBody = mime.split("\r\n\r\n")[1];
-  const text = Buffer.from(encodedBody, "base64").toString("utf8");
-  assert.match(text, /012345/);
+  assert.match(mime, /Content-Type: multipart\/alternative/);
+  const boundary = mime.match(/boundary="([^"]+)"/)?.[1];
+  assert.ok(boundary);
+  const parts = mime.split(`--${boundary}`);
+  const plainPart = parts.find((part) =>
+    part.includes("Content-Type: text/plain"));
+  const htmlPart = parts.find((part) =>
+    part.includes("Content-Type: text/html"));
+  assert.ok(plainPart);
+  assert.ok(htmlPart);
+  const decode = (part: string) =>
+    Buffer.from(part.split("\r\n\r\n")[1].trim(), "base64")
+      .toString("utf8");
+  const plain = decode(plainPart);
+  const html = decode(htmlPart);
+  assert.match(plain, /012345/);
+  assert.match(html, /012345/);
+  assert.match(html, /Verify your email address/);
+  assert.match(html, /IST/);
+  assert.match(html, /LeaseIQ Communications/);
+  assert.ok(mime.includes(`--${boundary}--`));
   assert.equal(calls[1].options?.redirect, "error");
 });
 

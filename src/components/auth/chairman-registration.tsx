@@ -19,7 +19,7 @@ const registrationResponseSchema = z.object({
   }).optional(),
   verification: z.object({
     email: challengeSchema,
-    phone: challengeSchema,
+    phone: challengeSchema.optional(),
   }),
 });
 
@@ -126,7 +126,7 @@ export default function ChairmanRegistration() {
     return () => window.clearTimeout(timer);
   }, [emailResendSeconds]);
 
-  const steps = ["Your details", "Verify contacts", "Account ready"];
+  const steps = ["Your details", "Verify email", "Account ready"];
 
   async function register(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -194,7 +194,7 @@ export default function ChairmanRegistration() {
       setChallenges(result.data.verification);
       form.reset();
       const message = responseMessage(
-        body, "Account created. Verify your email and mobile number.",
+        body, "Account created. Verify your email address.",
       );
       if (result.data.delivery?.email === "unconfirmed") {
         setError(message + " You can request a new email code after the countdown.");
@@ -276,6 +276,9 @@ export default function ChairmanRegistration() {
       return;
     }
 
+    const challenge = challenges[channel];
+    if (!challenge) return;
+
     const form = event.currentTarget;
     const code = String(new FormData(form).get("code") ?? "").trim();
 
@@ -295,7 +298,7 @@ export default function ChairmanRegistration() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          challengeId: challenges[channel].challengeId,
+          challengeId: challenge.challengeId,
           code,
         }),
         signal: AbortSignal.timeout(15000),
@@ -328,14 +331,13 @@ export default function ChairmanRegistration() {
 
       if (
         account.status === "active" &&
-        account.emailVerified &&
-        account.phoneVerified
+        account.emailVerified
       ) {
         setStep(2);
       } else {
         setNotice(
           channel === "email"
-            ? "Email verified. Complete mobile verification next."
+            ? "Email verified. Your account is awaiting activation."
             : "Mobile verified. Complete email verification next.",
         );
       }
@@ -416,9 +418,9 @@ export default function ChairmanRegistration() {
           {step === 0 && (
             <form onSubmit={register} noValidate className="mt-6">
               <p className="mb-5 text-sm leading-6 text-slate-600">
-                All fields are required. Verify both contacts to
-                activate your account. Society details come after
-                account verification.
+                All fields are required. Verify your email to activate
+                your account. Your mobile number is saved as unverified.
+                Society details come after account verification.
               </p>
 
               <fieldset disabled={busy} className="space-y-5">
@@ -486,11 +488,11 @@ export default function ChairmanRegistration() {
           {step === 1 && challenges && (
             <div className="mt-6 space-y-5">
               <p className="text-sm leading-6 text-slate-600">
-                Enter each contact’s six-digit code. Both contacts
-                must be verified before you can sign in.
+                Enter the six-digit code sent to your email.
+                Check your spam folder if it has not arrived.
               </p>
 
-              {(["phone", "email"] as const).map((channel) => (
+              {(["email"] as Channel[]).map((channel) => (
                 <form
                   key={channel}
                   onSubmit={(event) => void verify(event, channel)}
@@ -573,8 +575,8 @@ export default function ChairmanRegistration() {
                   Your chairman account is ready
                 </h2>
                 <p className="mt-2 text-sm leading-6">
-                  Your mobile number and email are verified.
-                  You can now sign in. Society approval and
+                  Your email is verified. Your mobile number remains
+                  unverified. You can now sign in. Society approval and
                   subscription activation are separate steps.
                 </p>
               </div>

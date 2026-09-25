@@ -74,6 +74,64 @@ test("email resend database behaviour", async (t) => {
     });
 
   try {
+
+    await t.test("email-only policy activates an account without verifying its phone", async () => {
+      const fixture = await seed();
+      await pool.query(
+        "UPDATE users SET verification_policy = 'email_only' WHERE id = $1",
+        [fixture.userId],
+      );
+
+      const response = await verifyRoute(request("/api/auth/verify", {
+        challengeId: fixture.challenge.id,
+        code: fixture.challenge.code,
+      }));
+      assert.equal(response.status, 200);
+      const body = await response.json();
+      assert.equal(body.status, "active");
+      assert.equal(body.emailVerified, true);
+      assert.equal(body.phoneVerified, false);
+
+      const result = await pool.query(
+        "SELECT phone_verified_at FROM users WHERE id = $1",
+        [fixture.userId],
+      );
+      assert.equal(result.rows[0].phone_verified_at, null);
+
+      const replay = await verifyRoute(request("/api/auth/verify", {
+        challengeId: fixture.challenge.id,
+        code: fixture.challenge.code,
+      }));
+      assert.equal(replay.status, 409);
+    });
+
+    await t.test("email-only policy does not activate a platform admin", async () => {
+      const fixture = await seed();
+      await pool.query(
+        "UPDATE users SET verification_policy = 'email_only' WHERE id = $1",
+        [fixture.userId],
+      );
+      await pool.query(
+        "INSERT INTO platform_admins(user_id) VALUES ($1)",
+        [fixture.userId],
+      );
+      try {
+        const response = await verifyRoute(request("/api/auth/verify", {
+          challengeId: fixture.challenge.id,
+          code: fixture.challenge.code,
+        }));
+        assert.equal(response.status, 200);
+        const body = await response.json();
+        assert.equal(body.status, "pending_verification");
+        assert.equal(body.phoneVerified, false);
+      } finally {
+        await pool.query(
+          "DELETE FROM platform_admins WHERE user_id = $1",
+          [fixture.userId],
+        );
+      }
+    });
+
     await t.test("replacement invalidates the old code and verifies email only", async () => {
       const fixture = await seed();
       let sent: ReturnType<typeof createVerificationCode> | undefined;

@@ -112,17 +112,67 @@ export function createGmailDelivery(
       "LeaseIQ Communications",
     ].join("\r\n");
 
+    const expiry = new Intl.DateTimeFormat("en-IN", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "Asia/Kolkata",
+    }).format(input.expiresAt);
+
+    const html = `<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f3f6f5;font-family:Arial,Helvetica,sans-serif;color:#172b25">
+<div style="display:none;max-height:0;overflow:hidden">Your LeaseIQ email verification code is ready.</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f6f5">
+<tr><td align="center" style="padding:32px 16px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #dce7e2;border-radius:16px">
+<tr><td style="padding:28px 32px;background:#005e46;border-radius:16px 16px 0 0">
+<div style="font-size:28px;font-weight:bold;color:#ffffff">LeaseIQ</div>
+<div style="margin-top:6px;font-size:13px;color:#d9f4e8">COMMUNICATIONS</div>
+</td></tr>
+<tr><td style="padding:32px">
+<h1 style="margin:0 0 16px;font-size:24px;line-height:32px">Verify your email address</h1>
+<p style="margin:0 0 24px;font-size:16px;line-height:26px;color:#455b52">Enter this code on the LeaseIQ verification screen to continue setting up your account.</p>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+<tr><td align="center" style="padding:24px 12px;background:#edfaf3;border:1px solid #bde4d0;border-radius:12px">
+<div style="font-size:12px;letter-spacing:1px;color:#426555">YOUR VERIFICATION CODE</div>
+<div style="margin-top:12px;font-family:Consolas,monospace;font-size:36px;font-weight:bold;letter-spacing:6px;color:#005e46">${input.code}</div>
+</td></tr></table>
+<p style="margin:20px 0 0;font-size:14px;line-height:23px;color:#455b52">Valid until <strong>${expiry} IST</strong>. This code can be used once.</p>
+<p style="margin:20px 0 0;font-size:14px;line-height:23px;color:#455b52">Keep this code private. LeaseIQ will never ask you to share it by phone or message.</p>
+<p style="margin:20px 0 0;font-size:13px;line-height:22px;color:#687b72">If you did not request this email, you can ignore it.</p>
+</td></tr>
+<tr><td style="padding:20px 32px;border-top:1px solid #e5ece8;font-size:12px;line-height:20px;color:#687b72">LeaseIQ Communications<br>Account verification</td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+
+    const boundary = `leaseiq_${randomUUID()}`;
+    const encodePart = (value: string) =>
+      Buffer.from(value, "utf8").toString("base64")
+        .match(/.{1,76}/g)!.join("\r\n");
+
     const message = [
       `From: LeaseIQ Communications <${config.senderEmail}>`,
       `To: ${input.destination}`,
-      "Subject: Your LeaseIQ verification code",
+      "Subject: Verify your email - LeaseIQ",
       `Date: ${new Date().toUTCString()}`,
       `Message-ID: <${randomUUID()}@${config.senderEmail.split("@")[1]}>`,
       "MIME-Version: 1.0",
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
       'Content-Type: text/plain; charset="UTF-8"',
       "Content-Transfer-Encoding: base64",
       "",
-      Buffer.from(body, "utf8").toString("base64").match(/.{1,76}/g)!.join("\r\n"),
+      encodePart(body),
+      `--${boundary}`,
+      'Content-Type: text/html; charset="UTF-8"',
+      "Content-Transfer-Encoding: base64",
+      "",
+      encodePart(html),
+      `--${boundary}--`,
+      "",
     ].join("\r\n");
 
     try {

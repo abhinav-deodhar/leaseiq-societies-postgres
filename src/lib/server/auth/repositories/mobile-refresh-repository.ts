@@ -31,7 +31,16 @@ export async function lockMobileSessionForRefresh(
        (
          u.status = 'active'
          AND u.email_verified_at IS NOT NULL
-         AND u.phone_verified_at IS NOT NULL
+         AND (
+         u.phone_verified_at IS NOT NULL
+         OR (
+           u.verification_policy = 'email_only'
+           AND NOT EXISTS (
+             SELECT 1 FROM platform_admins verification_admin
+             WHERE verification_admin.user_id = u.id
+           )
+         )
+       )
          AND NOT EXISTS (
            SELECT 1
            FROM platform_admins a

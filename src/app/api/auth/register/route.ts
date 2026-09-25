@@ -108,14 +108,16 @@ export async function POST(request: Request) {
 
     let userId: string;
     let emailChallenge: ReturnType<typeof createVerificationCode>;
-    let phoneChallenge: ReturnType<typeof createVerificationCode>;
 
     try {
       await client.query("BEGIN");
 
       const result = await client.query<{ id: string }>(
-        `INSERT INTO users (full_name, email, phone, password_hash, date_of_birth)
-         VALUES ($1, $2, $3, $4, $5::date)
+        `INSERT INTO users (
+           full_name, email, phone, password_hash, date_of_birth,
+           verification_policy
+         )
+         VALUES ($1, $2, $3, $4, $5::date, 'email_only')
          RETURNING id`,
         [fullName, email, phone, passwordHash, dateOfBirth],
       );
@@ -123,7 +125,6 @@ export async function POST(request: Request) {
       userId = result.rows[0].id;
 
       emailChallenge = createVerificationCode();
-      phoneChallenge = createVerificationCode();
 
       for (const item of [
         {
@@ -131,12 +132,6 @@ export async function POST(request: Request) {
           purpose: "verify_email",
           channel: "email",
           destination: email,
-        },
-        {
-          challenge: phoneChallenge,
-          purpose: "verify_phone",
-          channel: "sms",
-          destination: phone,
         },
       ]) {
         await client.query(
@@ -177,14 +172,13 @@ export async function POST(request: Request) {
     const delivery = await deliverRegistrationCodes(
       email,
       emailChallenge,
-      phoneChallenge,
     );
 
     return json(
       {
         message: delivery.email === "unconfirmed"
           ? "Your account was created, but email delivery was not confirmed. Keep this verification page open."
-          : "Account created. Verify your email and mobile number.",
+          : "Account created. Verify your email address.",
         delivery,
         userId,
         status: "pending_verification",
@@ -192,10 +186,6 @@ export async function POST(request: Request) {
           email: {
             challengeId: emailChallenge.id,
             expiresAt: emailChallenge.expiresAt.toISOString(),
-          },
-          phone: {
-            challengeId: phoneChallenge.id,
-            expiresAt: phoneChallenge.expiresAt.toISOString(),
           },
         },
       },
