@@ -6,21 +6,34 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "db:migrate:dev": "node scripts/migrate-dev.mjs",
+    "test:auth": "node --conditions=react-server --import tsx --test tests/auth-foundation.test.ts tests/verification-code.test.ts",
+    "test:society": "node --import tsx --test tests/society-validation.test.ts",
+    "test:layout": "node --import tsx --test tests/residential-layout.test.ts"
   },
   "dependencies": {
+    "@next/env": "^16.3.5",
+    "argon2": "^0.45.1",
+    "exceljs": "4.4.0",
     "next": "16.3.5",
+    "pg": "^8.23.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
+    "node-pg-migrate": "^9.0.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }
