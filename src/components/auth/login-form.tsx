@@ -80,7 +80,7 @@ export default function LoginForm({ portal }: Props) {
         <section className="flex flex-col justify-between bg-emerald-950 p-8 text-white md:p-12">
           <div>
             <Link
-              href={`/${portal}/login`}
+              href="/"
               className="text-xl font-semibold tracking-tight focus-visible:outline-2 focus-visible:outline-offset-4"
             >
               leaseIq<span className="text-emerald-300"> societies</span>
@@ -223,9 +223,8 @@ export default function LoginForm({ portal }: Props) {
             <p className="text-sm text-slate-500">Looking for another portal?</p>
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-3">
               {([
-                { value: "resident", label: "Resident" },
+                { value: "resident", label: "Resident / Tenant" },
                 { value: "chairman", label: "Chairman" },
-                { value: "admin", label: "Admin" },
               ] as const)
                 .filter((item) => item.value !== portal)
                 .map((item) => (
