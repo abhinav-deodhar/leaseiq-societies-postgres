@@ -3,6 +3,7 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import UnitDownloads from "./unit-downloads";
+import { occupancyLabels as occupancyLegend, occupancyDisplay } from "@/lib/contracts/occupancy";
 import UnitImport from "./unit-import";
 import UnitDeletionDialog from "./unit-deletion-dialog";
 import type { UnitDeletionTarget } from "@/lib/contracts/unit-deletion";
@@ -33,19 +34,7 @@ const emptyForm: FormValues = {
 const inputClass =
   "mt-2 w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-900 outline-none transition focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-50";
 
-const occupancyLabels = {
-  unknown: "Unknown",
-  vacant: "Unoccupied",
-  owner_occupied: "Owner occupied",
-  rented: "Tenant occupied",
-};
 
-const occupancyStyles = {
-  unknown: "border-slate-200 bg-slate-100 text-slate-700",
-  vacant: "border-amber-200 bg-amber-50 text-amber-900",
-  owner_occupied: "border-emerald-200 bg-emerald-50 text-emerald-900",
-  rented: "border-blue-200 bg-blue-50 text-blue-900",
-};
 
 export default function UnitRegister({
   societyId,
@@ -272,6 +261,14 @@ export default function UnitRegister({
         }}
       />}
       <UnitDownloads societyId={societyId} />
+      <section aria-label="Occupancy abbreviations" className="my-5 rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-semibold">Occupancy guide</h2>
+        <div className="mt-3 flex flex-wrap gap-3">
+          {Object.entries(occupancyLegend).map(([code, info]) => <span key={code}
+            className={`rounded-lg border px-3 py-2 text-sm ${info.tone}`}><strong>{code}</strong> — {info.label}</span>)}
+        </div>
+        <p className="mt-3 text-xs text-slate-600">Owner reports describe use of the flat. CR does not by itself confirm tenant registration. Existing unknown records remain UNK until reported.</p>
+      </section>
       <UnitImport
         societyId={societyId}
         unitTypes={data.unitTypes}
@@ -441,9 +438,12 @@ export default function UnitRegister({
                         )}
                       </td>
                       <td className="px-4 py-4">
-                        <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${occupancyStyles[unit.occupancyStatus]}`}>
+                        <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${occupancyDisplay(unit.occupancyBadge, unit.occupancyStatus).tone}`}>
                           <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
-                          {occupancyLabels[unit.occupancyStatus]}
+                          <span title={occupancyDisplay(unit.occupancyBadge, unit.occupancyStatus).label}
+                            aria-label={occupancyDisplay(unit.occupancyBadge, unit.occupancyStatus).label}>
+                            {occupancyDisplay(unit.occupancyBadge, unit.occupancyStatus).code}
+                          </span>
                         </span>
                       </td>
                       <td className="px-4 py-4 text-right">

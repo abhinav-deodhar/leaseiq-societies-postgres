@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { awayOccupancySchema } from "./occupancy";
 
 const firstName = z.string().trim()
   .min(1, "Enter a first name.").max(80);
@@ -31,6 +32,7 @@ export const residentProfileSchema = z.strictObject({
   firstName,
   lastName,
   residesInFlat: z.boolean(),
+  occupancyWhenAway: awayOccupancySchema.optional(),
   correspondenceSameAsFlat: z.boolean(),
   correspondenceAccountRevision: z.number().int().min(1).optional(),
   correspondenceAddress: z.strictObject({

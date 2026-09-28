@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import ApplicationAttachments from "./application-attachments";
+import { occupancyDisplay } from "@/lib/contracts/occupancy";
 import { useEffect, useRef, useState } from "react";
 import {
   applicationStatusLabels,
@@ -98,6 +99,8 @@ function ApplicationCard({
           ["Decision date", date(item.reviewedAt)],
           ["Lives in this flat", profile ? (profile.residesInFlat ? "Yes" : "No") : "Not provided"],
           ["Move-in date", item.moveInDate ?? "Not provided"],
+          ...(item.relationship === "owner" && profile && !profile.residesInFlat
+            ? [["Reported occupancy", occupancyDisplay(profile.occupancyWhenAway, "unknown").label]] : []),
         ].map(([label, value]) => <div key={label}>
           <dt className="text-slate-500">{label}</dt>
           <dd className="mt-1 break-words font-medium">{value}</dd>
@@ -129,7 +132,9 @@ function ApplicationCard({
 
       {(!chairman || ["pending", "approved"].includes(item.status)) &&
         <ApplicationAttachments requestId={item.id} relationship={item.relationship}
-          chairman={chairman} />}
+          chairman={chairman}
+          editable={!chairman && item.isOwn &&
+            ["draft", "changes_requested"].includes(item.status)} />}
       {ownershipConflict && !item.isOwn &&
         <Link className={button}
           href={`/chairman/owner-transfers?application=${item.id}`}>

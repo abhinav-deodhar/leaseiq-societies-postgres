@@ -107,7 +107,7 @@ function parseProfile(
   return parsed.data.profile;
 }
 
-async function withResidentRequestAccess<T>(
+export async function withResidentRequestAccess<T>(
   userId: string,
   societyId: string,
   operation: (client: PoolClient) => Promise<T>,

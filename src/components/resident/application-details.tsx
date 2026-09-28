@@ -5,6 +5,8 @@ import PrimaryAddressEditor from "@/components/resident/primary-address";
 import type { PrimaryAddressState } from "@/lib/contracts/primary-address";
 import Link from "next/link";
 import ApplicationAttachments from "./application-attachments";
+import OwnerOccupancyEditor from "./owner-occupancy-editor";
+import { awayOccupancySchema, occupancyDisplay } from "@/lib/contracts/occupancy";
 import { useRouter } from "next/navigation";
 import {
   residentApplicationProfileSchema,
@@ -150,6 +152,7 @@ export default function ApplicationDetails({
           {" "}You can still connect another flat.
         </p>
       </div>
+      {role === "owner" && <OwnerOccupancyEditor societyId={societyId} unitId={unitId} />}
       <div className="mt-5 flex flex-wrap gap-3">
         <Link href={`/resident/flats/${unitId}`}
           className="inline-flex min-h-11 items-center rounded-lg bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900">
@@ -259,6 +262,10 @@ function DetailsEditor({
   }
 
   function validate(includeFamily: boolean) {
+    if (relationship === "owner" && !profile.residesInFlat && !profile.occupancyWhenAway) {
+      setError("Choose the flat's occupancy when you do not live there.");
+      return false;
+    }
     if (profile.correspondenceAccountRevision === undefined) {
       setError("Confirm your account correspondence address before continuing.");
       return false;
@@ -456,6 +463,18 @@ function DetailsEditor({
             </label>)}
           </div>
         </fieldset> : <p>You are applying to live here as a tenant.</p>}
+        {relationship === "owner" && !profile.residesInFlat && <label className="block font-medium">
+          How is this flat currently used?
+          <select className={field} required value={profile.occupancyWhenAway ?? ""}
+            onChange={(event) => {
+              const value = awayOccupancySchema.safeParse(event.target.value);
+              updateProfile({ occupancyWhenAway: value.success ? value.data : undefined });
+            }}>
+            <option value="">Choose occupancy</option>
+            {awayOccupancySchema.options.map((code) => <option key={code} value={code}>{code} — {occupancyDisplay(code, "unknown").label}</option>)}
+          </select>
+          <span className="mt-2 block text-sm font-normal text-slate-500">Currently rented does not require the tenant to have an account yet. Tenant verification remains separate.</span>
+        </label>}
         {profile.residesInFlat && <TextField label="Move-in date · optional" type="date"
           value={moveInDate} onChange={setMoveInDate} />}
         {relationship === "tenant" && <TextField label="Agreement end date · optional" type="date"

@@ -1,4 +1,4 @@
-import { effectiveUnitOccupancySql } from "@/lib/server/repositories/unit-occupancy";
+import { effectiveUnitOccupancySql, effectiveUnitOccupancyBadgeSql } from "@/lib/server/repositories/unit-occupancy";
 import "server-only";
 import type { PoolClient } from "pg";
 import type { UnitSummary } from "@/lib/contracts/units";
@@ -23,6 +23,7 @@ export async function lockUnitForUpdate(
        u.unit_type_id AS "unitTypeId",
        t.name AS "unitTypeName",
        ${effectiveUnitOccupancySql} AS "occupancyStatus",
+       ${effectiveUnitOccupancyBadgeSql} AS "occupancyBadge",
        u.revision,
        u.created_at AS "createdAt"
      FROM society_units u

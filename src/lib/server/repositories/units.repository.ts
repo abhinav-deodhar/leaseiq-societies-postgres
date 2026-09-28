@@ -1,4 +1,4 @@
-import { effectiveUnitOccupancySql } from "@/lib/server/repositories/unit-occupancy";
+import { effectiveUnitOccupancySql, effectiveUnitOccupancyBadgeSql } from "@/lib/server/repositories/unit-occupancy";
 import "server-only";
 import type { PoolClient } from "pg";
 import type {
@@ -21,6 +21,7 @@ const unitColumns = `
   u.unit_type_id AS "unitTypeId",
   t.name AS "unitTypeName",
   ${effectiveUnitOccupancySql} AS "occupancyStatus",
+       ${effectiveUnitOccupancyBadgeSql} AS "occupancyBadge",
   u.revision,
   u.created_at AS "createdAt"
 `;

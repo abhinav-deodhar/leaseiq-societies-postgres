@@ -233,6 +233,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
+function requireOccupancyChoice(details: { relationship: string }, profile: { residesInFlat: boolean; occupancyWhenAway?: string } | undefined) {
+  if (details.relationship === "owner" && profile && !profile.residesInFlat && !profile.occupancyWhenAway) {
+    throw new HttpError(400, "Choose the flat's occupancy when you do not live there.");
+  }
+}
+
 const createSchema = z.strictObject({
   societyId: z.uuid(),
   details: residentRequestSchema,
@@ -250,6 +256,7 @@ export async function POST(request: NextRequest) {
     if (!parsed.success) {
       throw new HttpError(400, parsed.error.issues[0]?.message ?? "Check the details.");
     }
+    requireOccupancyChoice(parsed.data.details, parsed.data.profile);
     const draft = await createResidentRequestDraft(
       session.userId, parsed.data.societyId, parsed.data.details,
       parsed.data.profile,
@@ -274,6 +281,7 @@ export async function PATCH(request: NextRequest) {
       throw new HttpError(400,
         parsed.error.issues[0]?.message ?? "Check your details.");
     }
+    requireOccupancyChoice(parsed.data.details, parsed.data.profile);
     const draft = await updateResidentRequestDraft(
       session.userId,
       parsed.data.societyId,

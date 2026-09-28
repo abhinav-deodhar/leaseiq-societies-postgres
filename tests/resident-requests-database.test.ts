@@ -5,7 +5,7 @@ import {
   listApplicationInbox,
   reviewOwnerApplication,
 } from "../src/lib/server/services/owner-application-review.service";
-import { effectiveUnitOccupancySql } from "../src/lib/server/repositories/unit-occupancy";
+import { effectiveUnitOccupancySql, effectiveUnitOccupancyBadgeSql } from "../src/lib/server/repositories/unit-occupancy";
 import { loadResidentDashboard } from "../src/lib/server/services/resident-dashboard.service";
 import { HttpError } from "../src/lib/server/http";
 import assert from "node:assert/strict";
@@ -761,6 +761,21 @@ test("resident draft database behaviour", async (t) => {
           [occupancyRequest],
         );
         assert.equal(await occupancy(), "unknown", "Nonresident ownership is not occupancy");
+        for (const code of ["VARR", "VNRR", "UM", "CR", "FO"]) {
+          await client.query(
+            `UPDATE resident_unit_requests SET applicant_profile=$2::jsonb WHERE id=$1`,
+            [occupancyRequest, JSON.stringify({ residesInFlat: false, occupancyWhenAway: code })],
+          );
+          const badge = await client.query<{ badge: string }>(
+            `SELECT ${effectiveUnitOccupancyBadgeSql} AS badge FROM society_units u WHERE u.id=$1`,
+            [occupancyUnit],
+          );
+          assert.equal(badge.rows[0].badge, code);
+        }
+        await client.query(
+          `UPDATE resident_unit_requests SET applicant_profile='{"residesInFlat":false}'::jsonb WHERE id=$1`,
+          [occupancyRequest],
+        );
 
         await client.query(
           `UPDATE resident_unit_requests
