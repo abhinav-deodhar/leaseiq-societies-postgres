@@ -57,15 +57,15 @@ export const residentRequestSubmissionSchema = z.strictObject({
 export const residentRequestReviewSchema = z
   .strictObject({
     expectedRevision: z.number().int().positive().max(2147483647),
-    decision: z.enum(["approved", "rejected"]),
+    decision: z.enum(["approved", "rejected", "changes_requested"]),
     reviewNote: optionalNote,
   })
   .superRefine((value, context) => {
-    if (value.decision === "rejected" && value.reviewNote === null) {
+    if (value.decision !== "approved" && value.reviewNote === null) {
       context.addIssue({
         code: "custom",
         path: ["reviewNote"],
-        message: "Explain why the request was rejected.",
+        message: "Explain the required corrections or the reason for rejection.",
       });
     }
   });

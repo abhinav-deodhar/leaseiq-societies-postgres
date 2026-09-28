@@ -10,7 +10,7 @@ export type DocumentAccessContext = {
   accountEligible: boolean;
   documentReady: boolean;
   societyAvailable: boolean;
-  kind: "identity" | "rental_agreement";
+  kind: "identity" | "rental_agreement" | "ownership_proof";
 
   // Every relationship below must be resolved from the database
   // for this document's exact society, flat, request and tenancy.
@@ -37,7 +37,7 @@ export function documentAccessBasis(
 ): DocumentAccessBasis | null {
   if (!context.accountEligible || !context.documentReady) return null;
 
-  if (context.kind === "identity") {
+  if (context.kind === "identity" || context.kind === "ownership_proof") {
     // A person can inspect their own ready identity upload even when
     // their application is rejected or the society is suspended.
     if (context.isIdentitySubject) return "self";

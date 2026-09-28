@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import EmailAuthPanel from "./email-auth-panel";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
@@ -11,6 +12,7 @@ type Props = {
 export default function LoginForm({ portal }: Props) {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  const [emailLogin, setEmailLogin] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -116,9 +118,19 @@ export default function LoginForm({ portal }: Props) {
           <p className="text-sm font-medium text-emerald-700">Welcome back</p>
           <h2 className="mt-2 text-2xl font-semibold">{title}</h2>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            Use your verified mobile number and password.
+            {emailLogin && !isAdmin
+              ? "Receive a sign-in code at your registered email address."
+              : "Use your registered mobile number and password."}
           </p>
 
+          {emailLogin && portal !== "admin" ? (
+            <EmailAuthPanel
+              portal={portal}
+              purpose="login"
+              onBack={() => setEmailLogin(false)}
+            />
+          ) : (
+            <>
           <form
             onSubmit={handleSubmit}
             className="mt-8 space-y-5"
@@ -201,6 +213,34 @@ export default function LoginForm({ portal }: Props) {
             </button>
           </form>
 
+          {portal !== "admin" && (
+            <div className="mt-5 space-y-4">
+              <div className="flex justify-end">
+                <Link
+                  href={`/${portal}/forgot-password`}
+                  className="inline-flex min-h-11 items-center rounded text-sm font-semibold text-emerald-800 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-700"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <div className="flex items-center gap-3" aria-hidden="true">
+                <span className="h-px flex-1 bg-slate-200" />
+                <span className="text-xs text-slate-500">or</span>
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => { setError(""); setEmailLogin(true); }}
+                className="min-h-11 w-full rounded-xl border border-emerald-800 px-4 py-3 font-semibold text-emerald-900 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-700 disabled:opacity-60"
+              >
+                Sign in with email OTP
+              </button>
+            </div>
+          )}
+            </>
+          )}
+
                     {portal === "chairman" && (
             <div className="mt-6 rounded-xl bg-emerald-50 p-4">
               <p className="text-sm text-slate-700">
@@ -212,6 +252,20 @@ export default function LoginForm({ portal }: Props) {
                 className="mt-3 inline-flex font-semibold text-emerald-800 underline underline-offset-4"
               >
                 Register your society
+              </Link>
+            </div>
+          )}
+
+          {isResident && (
+            <div className="mt-6 rounded-xl bg-emerald-50 p-4">
+              <p className="text-sm text-slate-700">
+                New here? Owners and tenants can create a resident account.
+              </p>
+              <Link
+                href="/resident/register"
+                className="mt-3 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
+              >
+                Create a resident account
               </Link>
             </div>
           )}

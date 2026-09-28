@@ -1,3 +1,13 @@
+import {
+  submitOwnerApplication,
+} from "../src/lib/server/services/resident-requests.service";
+import {
+  listApplicationInbox,
+  reviewOwnerApplication,
+} from "../src/lib/server/services/owner-application-review.service";
+import { effectiveUnitOccupancySql } from "../src/lib/server/repositories/unit-occupancy";
+import { loadResidentDashboard } from "../src/lib/server/services/resident-dashboard.service";
+import { HttpError } from "../src/lib/server/http";
 import assert from "node:assert/strict";
 import { randomInt, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -122,6 +132,55 @@ test("resident draft database behaviour", async (t) => {
   }
 
   try {
+    await t.test("dashboard isolates accounts and removes revoked homes", async () => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const testUnit = randomUUID();
+        const requestId = randomUUID();
+        await client.query(
+          `INSERT INTO society_units (id, society_id, wing, flat_number, created_by)
+           VALUES ($1, $2, 'Dashboard', $3, $4)`,
+          [testUnit, society, testUnit, applicant],
+        );
+        await client.query(
+          `INSERT INTO resident_unit_requests (
+            id, society_id, unit_id, user_id, relationship, status,
+            submitted_at, reviewed_at, reviewed_by
+           ) VALUES ($1, $2, $3, $4, 'owner', 'approved', now(), now(), $5)`,
+          [requestId, society, testUnit, applicant, admin],
+        );
+        await client.query(
+          `INSERT INTO resident_unit_memberships (
+            society_id, unit_id, user_id, relationship, source_request_id, approved_by
+           ) VALUES ($1, $2, $3, 'owner', $4, $5)`,
+          [society, testUnit, applicant, requestId, admin],
+        );
+
+        const mine = await loadResidentDashboard(applicant, client);
+        assert.ok(mine.homes.some((home) => home.unitId === testUnit));
+        assert.ok(mine.applications.some((item) => item.id === requestId));
+
+        const unrelated = await loadResidentDashboard(otherUser, client);
+        assert.equal(unrelated.homes.some((home) => home.unitId === testUnit), false);
+        assert.equal(unrelated.applications.some((item) => item.id === requestId), false);
+
+        await client.query(
+          `UPDATE resident_unit_memberships
+           SET status = 'revoked', revoked_at = clock_timestamp(),
+               revoked_by = $2, revocation_reason = 'Dashboard test'
+           WHERE source_request_id = $1`,
+          [requestId, admin],
+        );
+        const revoked = await loadResidentDashboard(applicant, client);
+        assert.equal(revoked.homes.some((home) => home.unitId === testUnit), false);
+        assert.ok(revoked.applications.some((item) => item.id === requestId));
+      } finally {
+        await client.query("ROLLBACK");
+        client.release();
+      }
+    });
+
     const input = { unitId: unit, relationship: "owner" };
     const draft = await createResidentRequestDraft(applicant, society, input);
 
@@ -171,6 +230,46 @@ test("resident draft database behaviour", async (t) => {
         [applicant, secondUnit],
       );
       assert.equal(stored.rowCount, 1);
+    });
+
+    await t.test("profiles persist and stale or foreign updates cannot replace them", async () => {
+      const details = { unitId: secondUnit, relationship: "owner" };
+      const profile = {
+        firstName: "Profile", lastName: "Tester",
+        residesInFlat: true, correspondenceSameAsFlat: true,
+        correspondenceAddress: { line1: "", line2: "", city: "", state: "", pinCode: "" },
+        familyMembers: [{
+          firstName: "Family", lastName: "Tester",
+          relationshipToOwner: "Child", phone: "", email: "",
+        }],
+      };
+      const created = await createResidentRequestDraft(otherUser, society, details, profile);
+      assert.deepEqual(created.applicantProfile, profile);
+      const retry = await createResidentRequestDraft(otherUser, society, details, profile);
+      assert.equal(retry.id, created.id);
+
+      const updatedProfile = { ...profile, firstName: "Updated" };
+      const updated = await updateResidentRequestDraft(
+        otherUser, society, created.id, created.revision, details, updatedProfile,
+      );
+      assert.deepEqual(updated.applicantProfile, updatedProfile);
+      await assert.rejects(
+        updateResidentRequestDraft(otherUser, society, created.id, created.revision, details, profile),
+        hasCode("REVISION_CONFLICT"),
+      );
+      await assert.rejects(
+        updateResidentRequestDraft(applicant, society, created.id, updated.revision, details, profile),
+        hasCode("NOT_FOUND"),
+      );
+      await assert.rejects(
+        updateResidentRequestDraft(otherUser, society, created.id, updated.revision,
+          { ...details, relationship: "tenant" }, updatedProfile),
+        hasCode("INVALID_INPUT"),
+      );
+      const stored = await pool.query(
+        "SELECT applicant_profile FROM resident_unit_requests WHERE id = $1", [created.id],
+      );
+      assert.deepEqual(stored.rows[0].applicant_profile, updatedProfile);
     });
 
     await t.test("a competing owner or tenant request is rejected", async () => {
@@ -225,6 +324,8 @@ test("resident draft database behaviour", async (t) => {
       );
       assert.equal(updated.revision, 2);
       assert.equal(updated.applicantNote, "Updated details.");
+      assert.equal(updated.applicantProfile, null);
+
 
       await assert.rejects(
         updateResidentRequestDraft(
@@ -296,21 +397,42 @@ test("resident draft database behaviour", async (t) => {
     });
 
     await t.test("unapproved societies cannot receive requests", async () => {
-      await pool.query(
-        `UPDATE society_applications
-         SET status = 'pending_review',
-             reviewed_at = NULL, reviewed_by = NULL, review_note = NULL
-         WHERE society_id = $1`,
+      const original = await pool.query(
+        `SELECT status, reviewed_at, reviewed_by, review_note
+         FROM society_applications WHERE society_id = $1`,
         [otherSociety],
       );
+      assert.equal(original.rowCount, 1);
+      const saved = original.rows[0];
 
-      await assert.rejects(
-        createResidentRequestDraft(otherUser, otherSociety, {
-          unitId: foreignUnit,
-          relationship: "owner",
-        }),
-        hasCode("NOT_FOUND"),
-      );
+      try {
+        await pool.query(
+          `UPDATE society_applications
+           SET status = 'pending_review',
+               reviewed_at = NULL, reviewed_by = NULL, review_note = NULL
+           WHERE society_id = $1`,
+          [otherSociety],
+        );
+
+        await assert.rejects(
+          createResidentRequestDraft(otherUser, otherSociety, {
+            unitId: foreignUnit,
+            relationship: "owner",
+          }),
+          hasCode("NOT_FOUND"),
+        );
+      } finally {
+        await pool.query(
+          `UPDATE society_applications
+           SET status = $2, reviewed_at = $3,
+               reviewed_by = $4, review_note = $5
+           WHERE society_id = $1`,
+          [
+            otherSociety, saved.status, saved.reviewed_at,
+            saved.reviewed_by, saved.review_note,
+          ],
+        );
+      }
     });
 
     await t.test("private document access uses database relationships", async (documents) => {
@@ -579,6 +701,371 @@ test("resident draft database behaviour", async (t) => {
       });
     });
 
+
+    await t.test("unit occupancy follows approved resident-owner membership", async () => {
+      const client = await pool.connect();
+      const occupancyUnit = randomUUID();
+      const occupancyRequest = randomUUID();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          `INSERT INTO society_units (
+             id, society_id, wing, flat_number, created_by
+           ) VALUES ($1, $2, 'Occupancy test', $3, $4)`,
+          [occupancyUnit, society, occupancyUnit, applicant],
+        );
+        await client.query(
+          `INSERT INTO resident_unit_requests (
+             id, society_id, unit_id, user_id, relationship,
+             status, submitted_at, applicant_profile
+           ) VALUES (
+             $1, $2, $3, $4, 'owner', 'pending', clock_timestamp(),
+             '{"residesInFlat":true}'::jsonb
+           )`,
+          [occupancyRequest, society, occupancyUnit, otherUser],
+        );
+
+        async function occupancy() {
+          const result = await client.query<{ status: string }>(
+            `SELECT ${effectiveUnitOccupancySql} AS status
+             FROM society_units u WHERE u.id = $1 AND u.society_id = $2`,
+            [occupancyUnit, society],
+          );
+          return result.rows[0].status;
+        }
+
+        assert.equal(await occupancy(), "unknown", "Pending application is not occupancy");
+
+        await client.query(
+          `UPDATE resident_unit_requests
+           SET status = 'approved', reviewed_at = clock_timestamp(),
+               reviewed_by = $2
+           WHERE id = $1`,
+          [occupancyRequest, admin],
+        );
+        assert.equal(await occupancy(), "unknown", "Approval needs an active membership");
+
+        await client.query(
+          `INSERT INTO resident_unit_memberships (
+             society_id, unit_id, user_id, relationship,
+             source_request_id, approved_by
+           ) VALUES ($1, $2, $3, 'owner', $4, $5)`,
+          [society, occupancyUnit, otherUser, occupancyRequest, admin],
+        );
+        assert.equal(await occupancy(), "owner_occupied");
+
+        await client.query(
+          `UPDATE resident_unit_requests
+           SET applicant_profile = '{"residesInFlat":false}'::jsonb
+           WHERE id = $1`,
+          [occupancyRequest],
+        );
+        assert.equal(await occupancy(), "unknown", "Nonresident ownership is not occupancy");
+
+        await client.query(
+          `UPDATE resident_unit_requests
+           SET applicant_profile = '{"residesInFlat":true}'::jsonb
+           WHERE id = $1`,
+          [occupancyRequest],
+        );
+        await client.query(
+          `UPDATE resident_unit_memberships
+           SET move_in_date =
+             (statement_timestamp() AT TIME ZONE 'Asia/Kolkata')::date + 1
+           WHERE source_request_id = $1`,
+          [occupancyRequest],
+        );
+        assert.equal(await occupancy(), "unknown", "Future move-in is not current occupancy");
+
+        await client.query(
+          `UPDATE resident_unit_memberships
+           SET move_in_date = NULL WHERE source_request_id = $1`,
+          [occupancyRequest],
+        );
+        await client.query(
+          `UPDATE society_units SET occupancy_status = 'rented' WHERE id = $1`,
+          [occupancyUnit],
+        );
+        assert.equal(await occupancy(), "rented", "Preserve recorded rental occupancy");
+
+        await client.query(
+          `UPDATE society_units SET occupancy_status = 'unknown' WHERE id = $1`,
+          [occupancyUnit],
+        );
+        await client.query(
+          `UPDATE resident_unit_memberships
+           SET status = 'revoked', revoked_at = clock_timestamp(),
+               revoked_by = $2, revocation_reason = 'Occupancy test'
+           WHERE source_request_id = $1`,
+          [occupancyRequest, admin],
+        );
+        assert.equal(await occupancy(), "unknown", "Revoked membership cannot establish occupancy");
+      } finally {
+        try { await client.query("ROLLBACK"); }
+        finally { client.release(); }
+      }
+    });
+
+
+    await t.test("chairman corrections keep one application and allow resubmission", async () => {
+      const correctionUnit = randomUUID();
+      await pool.query(
+        `INSERT INTO society_units (
+           id, society_id, wing, flat_number, created_by
+         ) VALUES ($1, $2, 'Corrections', 'C301', $3)`,
+        [correctionUnit, otherSociety, applicant],
+      );
+      await pool.query(
+        `INSERT INTO society_memberships (society_id, user_id, role, status)
+         VALUES ($1, $2, 'chairman', 'active')`,
+        [otherSociety, applicant],
+      );
+
+      const profile = {
+        firstName: "Correction", lastName: "Tester",
+        residesInFlat: true, correspondenceSameAsFlat: true,
+        correspondenceAddress: {
+          line1: "", line2: "", city: "", state: "", pinCode: "",
+        },
+        familyMembers: [],
+      };
+      const details = { unitId: correctionUnit, relationship: "owner" };
+      const draft = await createResidentRequestDraft(
+        otherUser, otherSociety, details, profile,
+      );
+      const privateInbox = await listApplicationInbox(applicant, otherSociety, {});
+      assert.equal(privateInbox.items.some((item) => item.id === draft.id), false);
+
+      const pending = await submitOwnerApplication(
+        otherUser, otherSociety, draft.id, draft.revision,
+      );
+      await assert.rejects(reviewOwnerApplication(
+        applicant, otherSociety, draft.id, {
+          expectedRevision: pending.revision,
+          decision: "changes_requested", reviewNote: " ",
+        },
+      ));
+      await assert.rejects(reviewOwnerApplication(
+        otherUser, otherSociety, draft.id, {
+          expectedRevision: pending.revision,
+          decision: "approved",
+        },
+      ));
+
+      const returned = await reviewOwnerApplication(
+        applicant, otherSociety, draft.id, {
+          expectedRevision: pending.revision,
+          decision: "changes_requested",
+          reviewNote: "Please correct your surname.",
+        },
+      );
+      assert.equal(returned.status, "changes_requested");
+
+      const retried = await reviewOwnerApplication(
+        applicant, otherSociety, draft.id, {
+          expectedRevision: pending.revision,
+          decision: "changes_requested",
+          reviewNote: "Please correct your surname.",
+        },
+      );
+      assert.equal(retried.revision, returned.revision);
+      await assert.rejects(
+        createResidentRequestDraft(otherUser, otherSociety, details, profile),
+        hasCode("REQUEST_EXISTS"),
+      );
+      await assert.rejects(
+        updateResidentRequestDraft(
+          otherUser, otherSociety, draft.id, returned.revision,
+          { ...details, relationship: "tenant" }, profile,
+        ),
+        hasCode("INVALID_INPUT"),
+      );
+      await assert.rejects(
+        updateResidentRequestDraft(
+          applicant, otherSociety, draft.id, returned.revision, details, profile,
+        ),
+        hasCode("NOT_FOUND"),
+      );
+
+      const corrected = await updateResidentRequestDraft(
+        otherUser, otherSociety, draft.id, returned.revision,
+        details, { ...profile, lastName: "Corrected" },
+      );
+      assert.equal(corrected.status, "changes_requested");
+      const [submitted, repeated] = await Promise.all([
+        submitOwnerApplication(otherUser, otherSociety, draft.id, corrected.revision),
+        submitOwnerApplication(otherUser, otherSociety, draft.id, corrected.revision),
+      ]);
+      assert.equal(submitted.id, draft.id);
+      assert.equal(submitted.revision, repeated.revision);
+      assert.equal(submitted.status, "pending");
+
+      const inbox = await listApplicationInbox(applicant, otherSociety, {});
+      const found = inbox.items.find((item) => item.id === draft.id);
+      assert.equal(found?.resubmissionCount, 1);
+      assert.ok(found?.history.some((entry) =>
+        entry.action === "changes_requested" &&
+        entry.note === "Please correct your surname."));
+      assert.equal(inbox.counts.pending, 1);
+      assert.equal(inbox.counts.changes_requested, 0);
+
+      await assert.rejects(reviewOwnerApplication(
+        applicant, otherSociety, draft.id, {
+          expectedRevision: returned.revision, decision: "approved",
+        },
+      ));
+
+      const approved = await reviewOwnerApplication(
+        applicant, otherSociety, draft.id, {
+          expectedRevision: submitted.revision, decision: "approved",
+        },
+      );
+      assert.equal(approved.status, "approved");
+      const membership = await pool.query(
+        `SELECT id FROM resident_unit_memberships
+         WHERE source_request_id = $1 AND status = 'active'`,
+        [draft.id],
+      );
+      assert.equal(membership.rowCount, 1);
+    });
+
+    await t.test("competing owner approvals cannot grant two memberships", async () => {
+      const raceUnit = randomUUID();
+      const contenders = [randomUUID(), randomUUID()];
+      users.push(...contenders);
+
+      for (const userId of contenders) {
+        await pool.query(
+          `INSERT INTO users (
+            id, full_name, email, phone, date_of_birth,
+            status, email_verified_at, phone_verified_at
+           ) VALUES (
+            $1, 'Owner Conflict Tester', $2, $3, '1990-01-01',
+            'active', clock_timestamp(), clock_timestamp()
+           )`,
+          [
+            userId,
+            `owner-conflict-${userId}@example.invalid`,
+            `+919${randomInt(100_000_000, 1_000_000_000)}`,
+          ],
+        );
+      }
+      await pool.query(
+        `INSERT INTO society_units (
+          id, society_id, wing, flat_number, created_by
+         ) VALUES ($1, $2, 'Owner conflict', $3, $4)`,
+        [raceUnit, otherSociety, raceUnit, applicant],
+      );
+
+      const profile = {
+        firstName: "Owner", lastName: "Tester",
+        residesInFlat: true, correspondenceSameAsFlat: true,
+        correspondenceAddress: {
+          line1: "", line2: "", city: "", state: "", pinCode: "",
+        },
+        familyMembers: [],
+      };
+
+      const pending = [];
+      for (const userId of contenders) {
+        const created = await createResidentRequestDraft(
+          userId, otherSociety,
+          { unitId: raceUnit, relationship: "owner" }, profile,
+        );
+        pending.push(await submitOwnerApplication(
+          userId, otherSociety, created.id, created.revision,
+        ));
+      }
+
+      const outcomes = await Promise.allSettled(pending.map((request) =>
+        reviewOwnerApplication(applicant, otherSociety, request.id, {
+          expectedRevision: request.revision, decision: "approved",
+        }),
+      ));
+      assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+      assert.equal(outcomes.filter((outcome) => outcome.status === "rejected").length, 1);
+
+      const winningIndex = outcomes.findIndex((outcome) => outcome.status === "fulfilled");
+      const losingIndex = 1 - winningIndex;
+      const winner = pending[winningIndex];
+      const loser = pending[losingIndex];
+      const failure = outcomes[losingIndex];
+      assert.equal(failure.status, "rejected");
+      if (failure.status === "rejected") {
+        assert.ok(failure.reason instanceof HttpError);
+        assert.equal(failure.reason.status, 409);
+        assert.match(failure.reason.message, /active registered owner/i);
+      }
+
+      const membershipCount = await pool.query(
+        `SELECT count(*)::integer AS count
+         FROM resident_unit_memberships
+         WHERE society_id = $1 AND unit_id = $2
+           AND relationship = 'owner' AND status = 'active'`,
+        [otherSociety, raceUnit],
+      );
+      assert.equal(membershipCount.rows[0].count, 1);
+
+      const unchanged = await pool.query(
+        `SELECT status, revision FROM resident_unit_requests WHERE id = $1`,
+        [loser.id],
+      );
+      assert.equal(unchanged.rows[0].status, "pending");
+      assert.equal(unchanged.rows[0].revision, loser.revision);
+
+      const noApprovalEvent = await pool.query(
+        `SELECT count(*)::integer AS count
+         FROM resident_unit_request_events
+         WHERE request_id = $1 AND action = 'approved'`,
+        [loser.id],
+      );
+      assert.equal(noApprovalEvent.rows[0].count, 0);
+
+      // An identical retry of the winning approval stays idempotent.
+      const retried = await reviewOwnerApplication(
+        applicant, otherSociety, winner.id,
+        { expectedRevision: winner.revision, decision: "approved" },
+      );
+      assert.equal(retried.status, "approved");
+
+      const chairmanInbox = await listApplicationInbox(
+        applicant, otherSociety, { application: loser.id },
+      );
+      assert.equal(chairmanInbox.items[0].currentOwners.length, 1);
+
+      const residentInbox = await listApplicationInbox(
+        contenders[losingIndex], null, { application: loser.id },
+      );
+      assert.deepEqual(residentInbox.items[0].currentOwners, []);
+
+      // Conflicts must not prevent the chairman from requesting clarification.
+      const returned = await reviewOwnerApplication(
+        applicant, otherSociety, loser.id, {
+          expectedRevision: loser.revision,
+          decision: "changes_requested",
+          reviewNote: "Please clarify your ownership claim.",
+        },
+      );
+      assert.equal(returned.status, "changes_requested");
+
+      // Fixture revocation: verifies historical approval is not current access.
+      // This does not add a production revoke or ownership-transfer endpoint.
+      await pool.query(
+        `UPDATE resident_unit_memberships
+         SET status = 'revoked', revoked_at = clock_timestamp(),
+             revoked_by = $2, revocation_reason = 'Test ended association'
+         WHERE source_request_id = $1`,
+        [winner.id, applicant],
+      );
+      const historical = await listApplicationInbox(
+        contenders[winningIndex], null, { application: winner.id },
+      );
+      assert.equal(historical.items[0].status, "approved");
+      assert.equal(historical.items[0].associationStatus, "ended");
+      const dashboard = await loadResidentDashboard(contenders[winningIndex]);
+      assert.equal(dashboard.homes.some((home) => home.unitId === raceUnit), false);
+    });
+
     await t.test("submitted requests cannot be edited as drafts", async () => {
       // Fixture transition only; this does not expose a submission API.
       await pool.query(
@@ -602,7 +1089,7 @@ test("resident draft database behaviour", async (t) => {
       // Release agreement references before removing test documents.
       await cleanup.query(
         `UPDATE resident_unit_requests
-         SET status = 'draft',
+         SET status = 'withdrawn',
              submitted_at = NULL,
              reviewed_at = NULL,
              reviewed_by = NULL,

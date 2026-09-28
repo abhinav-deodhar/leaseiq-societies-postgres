@@ -21,6 +21,22 @@ export async function lockMobileSessionForRefresh(
   client: PoolClient,
   refreshTokenHash: string,
 ): Promise<LockedMobileSession | null> {
+  // Account first, then mobile session: the same order as password reset.
+  const owner = await client.query<{ userId: string }>(
+    `SELECT m.user_id AS "userId"
+     FROM mobile_sessions m
+     JOIN mobile_refresh_tokens r ON r.mobile_session_id = m.id
+     WHERE r.token_hash = $1`,
+    [refreshTokenHash],
+  );
+  if (!owner.rows[0]) return null;
+
+  const locked = await client.query(
+    "SELECT id FROM users WHERE id = $1 FOR UPDATE",
+    [owner.rows[0].userId],
+  );
+  if (locked.rowCount !== 1) return null;
+
   const result = await client.query<LockedMobileSession>(
     `SELECT
        m.id AS "mobileSessionId",
@@ -55,7 +71,7 @@ export async function lockMobileSessionForRefresh(
        WHERE r.mobile_session_id = m.id
          AND r.token_hash = $1
      )
-     FOR UPDATE OF m, u`,
+     FOR UPDATE OF m`,
     [refreshTokenHash],
   );
 

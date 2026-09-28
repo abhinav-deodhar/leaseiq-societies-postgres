@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import ResidentDashboard from "@/components/resident/resident-dashboard";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import LogoutButton from "@/components/auth/logout-button";
@@ -10,9 +11,10 @@ import {
 import { getChairmanApplication } from "@/lib/server/services/chairman-application.service";
 
 export default async function PortalHome({
-  params,
+  params, searchParams,
 }: {
   params: Promise<{ portal: string }>;
+  searchParams: Promise<{ view?: string | string[]; unit?: string | string[] }>;
 }) {
   const { portal: value } = await params;
   const portal = parsePortal(value);
@@ -28,47 +30,10 @@ export default async function PortalHome({
   }
 
   if (portal === "resident") {
-    return (
-      <main className="min-h-screen bg-[#f3f6f4] font-sans text-slate-900">
-        <header className="border-b border-slate-200 bg-white">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-5 py-5 sm:px-8">
-            <div>
-              <p className="text-xl font-bold tracking-tight text-emerald-900">
-                LeaseIQ
-              </p>
-              <p className="mt-1 text-sm text-slate-500">Resident portal</p>
-            </div>
-            <LogoutButton portal="resident" />
-          </div>
-        </header>
-
-        <section className="mx-auto max-w-5xl px-5 py-10 sm:px-8 sm:py-14">
-          <p className="text-sm font-semibold text-emerald-700">
-            Your resident account
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Welcome, {session.fullName}
-          </h1>
-          <p className="mt-3 max-w-2xl leading-7 text-slate-600">
-            One place for your home and community.
-          </p>
-
-          <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-            <div className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-800">
-              Signed in
-            </div>
-            <h2 className="mt-4 text-xl font-semibold">
-              Access to your society
-            </h2>
-            <p className="mt-3 max-w-2xl leading-7 text-slate-600">
-              Owners and tenants use this portal. Access to a flat’s bills,
-              documents and society services requires an approved association
-              with that flat.
-            </p>
-          </div>
-        </section>
-      </main>
-    );
+    const query = await searchParams;
+    return <ResidentDashboard fullName={session.fullName}
+      initialView={typeof query.view === "string" ? query.view : "home"}
+      initialUnit={typeof query.unit === "string" ? query.unit : ""} />;
   }
 
   const isAdmin = portal === "admin";

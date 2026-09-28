@@ -1,11 +1,13 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { INDIAN_STATES_AND_UTS, societyDetailsSchema, calculatedSocietyApplicationSchema, type SocietyApplicationData } from "@/lib/validation/society";
+import { societyDetailsSchema, calculatedSocietyApplicationSchema, type SocietyApplicationData } from "@/lib/validation/society";
 import { STANDARD_UNIT_KEYS, type ResidentialLayoutData, type ResidentialLayoutInput } from "@/lib/validation/residential-layout";
 import ResidentialLayoutSummary from "@/components/society/residential-layout-summary";
 import ResidentialCalculator, { unitLabels } from "./residential-calculator";
 import { detailFields } from "./society-form-fields";
+import CityPicker from "@/components/society/city-picker";
+import { makeCity, type LocationCity } from "@/lib/locations/cities";
 
 type Props = { initialValues?: SocietyApplicationData; applicationId?: string; revision?: number };
 function initialLayout(data?: SocietyApplicationData): ResidentialLayoutInput | undefined {
@@ -24,6 +26,10 @@ export default function SocietyApplicationForm({ initialValues, applicationId, r
   const headingRef = useRef<HTMLHeadingElement>(null);
   const submitting = useRef(false);
   const [step, setStep] = useState(0);
+  const [chosenCity, setChosenCity] = useState<LocationCity | null>(
+    initialValues ? makeCity(initialValues.city, initialValues.state) : null,
+  );
+  const [choosingCity, setChoosingCity] = useState(!initialValues);
   const [calculated, setCalculated] = useState<ResidentialLayoutData | null>(null);
   const [busy, setBusy] = useState(false);
   const [mustCheck, setMustCheck] = useState(false);
@@ -34,7 +40,7 @@ export default function SocietyApplicationForm({ initialValues, applicationId, r
   function move(next: number) { setStep(next); setMessage(""); requestAnimationFrame(() => headingRef.current?.focus()); }
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitting.current || mustCheck) return;
+    if (submitting.current || mustCheck || choosingCity || !chosenCity) return;
     const form = event.currentTarget;
     const data = new FormData(form);
     const details = Object.fromEntries(detailFields.map(field => [field.name, String(data.get(field.name) ?? "")]));
@@ -76,7 +82,20 @@ export default function SocietyApplicationForm({ initialValues, applicationId, r
   }
   const inputClass = "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 focus:outline-2 focus:outline-emerald-700 focus:placeholder:text-transparent";
   const buttonClass = "rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50";
-  return <form ref={formRef} onSubmit={submit} noValidate aria-busy={busy} className="mt-6">
+  return <>
+    {choosingCity && <div className="mt-6">
+      <CityPicker allowCustom onSelect={(city) => {
+        setChosenCity(city); setChoosingCity(false);
+        setStep(0); setReview(null); setErrors({}); setMessage("");
+      }} />
+    </div>}
+    <form hidden={choosingCity} ref={formRef} onSubmit={submit} noValidate aria-busy={busy} className="mt-6">
+    <div className="mb-6 flex items-center justify-between rounded-xl bg-emerald-50 p-4">
+      <p className="font-semibold text-emerald-900">{chosenCity?.name} · {chosenCity?.state}</p>
+      <button type="button" disabled={busy || mustCheck}
+        className="font-semibold text-emerald-900 underline"
+        onClick={() => setChoosingCity(true)}>Change city</button>
+    </div>
     <nav aria-label="Application progress"><p className="text-sm text-slate-600">Step {step + 1} of 3</p>
       <ol className="mt-3 grid grid-cols-3 gap-2">{steps.map((label, i) => <li key={label} aria-current={step === i ? "step" : undefined}
         className={`rounded-xl border p-3 text-xs font-semibold sm:text-sm ${i <= step ? "border-emerald-300 bg-emerald-50 text-emerald-900" : "border-slate-200 bg-white text-slate-500"}`}>{i < step ? "✓" : i + 1} {label}</li>)}</ol>
@@ -87,9 +106,11 @@ export default function SocietyApplicationForm({ initialValues, applicationId, r
     <fieldset hidden={step !== 0} disabled={busy || mustCheck} className="mt-6 rounded-2xl border border-slate-200 bg-white p-6">
       <legend className="sr-only">Society details</legend><div className="grid gap-5 sm:grid-cols-2">
         {detailFields.map(field => <label key={field.name} className="text-sm font-semibold">{field.label}{field.optional ? " (optional)" : " *"}
-          {field.name === "state" ? <select name={field.name} defaultValue={initialValues?.state ?? ""} aria-invalid={!!errors[field.name]} aria-describedby={`${field.name}-error`} className={inputClass}>
-            <option value="">Select state / union territory</option>{INDIAN_STATES_AND_UTS.map(state => <option key={state}>{state}</option>)}
-          </select> : <input name={field.name} type="text" defaultValue={String(initialValues?.[field.name] ?? "")} maxLength={field.maxLength}
+          {field.name === "city" || field.name === "state"
+            ? <input name={field.name} readOnly
+                value={field.name === "city" ? chosenCity?.name ?? "" : chosenCity?.state ?? ""}
+                className={inputClass} />
+            : <input name={field.name} type="text" defaultValue={String(initialValues?.[field.name] ?? "")} maxLength={field.maxLength}
             inputMode={field.name === "pinCode" ? "numeric" : undefined} required={!field.optional} aria-invalid={!!errors[field.name]} aria-describedby={`${field.name}-error`} className={inputClass} />}
           <span id={`${field.name}-error`} className="mt-1 block font-normal text-red-700">{errors[field.name]}</span>
         </label>)}
@@ -117,5 +138,5 @@ export default function SocietyApplicationForm({ initialValues, applicationId, r
       <button type="submit" disabled={busy} className="rounded-xl bg-emerald-800 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-50">{busy ? "Submitting…" : step === 2 ? applicationId ? "Resubmit for review" : "Submit for admin review" : "Continue"}</button>
       <button type="button" disabled={busy} onClick={() => window.location.replace("/chairman/society")} className={buttonClass}>Cancel without saving</button>
     </>}</div><p role="status" className="mt-3 text-sm">{busy ? "Saving your application…" : ""}</p>
-  </form>;
+  </form></>;
 }

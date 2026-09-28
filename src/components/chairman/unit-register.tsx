@@ -4,7 +4,6 @@ import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import UnitDownloads from "./unit-downloads";
 import UnitImport from "./unit-import";
-import { displayFloor } from "@/lib/formatters/floor-label";
 import {
   createUnitSchema,
   type UnitListResponse,
@@ -34,9 +33,16 @@ const inputClass =
 
 const occupancyLabels = {
   unknown: "Unknown",
-  vacant: "Vacant",
+  vacant: "Unoccupied",
   owner_occupied: "Owner occupied",
-  rented: "Rented",
+  rented: "Tenant occupied",
+};
+
+const occupancyStyles = {
+  unknown: "border-slate-200 bg-slate-100 text-slate-700",
+  vacant: "border-amber-200 bg-amber-50 text-amber-900",
+  owner_occupied: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  rented: "border-blue-200 bg-blue-50 text-blue-900",
 };
 
 export default function UnitRegister({
@@ -350,7 +356,8 @@ export default function UnitRegister({
                 <caption className="sr-only">Society physical unit register</caption>
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
-                    <th scope="col" className="px-6 py-3">Flat</th>
+                    <th scope="col" className="px-6 py-3">Wing</th>
+                    <th scope="col" className="px-4 py-3">Flat number</th>
                     <th scope="col" className="px-4 py-3">Floor</th>
                     <th scope="col" className="px-4 py-3">Unit type</th>
                     <th scope="col" className="px-4 py-3">Occupancy</th>
@@ -367,14 +374,10 @@ export default function UnitRegister({
                           : "hover:bg-slate-50/70"
                       }
                     >
-                      <td className="px-6 py-4">
-                        <p className="font-semibold">{unit.flatNumber}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {unit.wing ? `Wing ${unit.wing}` : "No wing"}
-                        </p>
-                      </td>
+                      <td className="px-6 py-4">{unit.wing || "No wing"}</td>
+                      <td className="px-4 py-4 font-semibold">{unit.flatNumber}</td>
                       <td className="px-4 py-4 text-slate-600">
-                        {displayFloor(unit.wing, unit.floorLabel, !unit.wing.trim())}
+                        {unit.floorLabel || "—"}
                       </td>
                       <td className="px-4 py-4">
                         {unit.unitTypeName ?? (
@@ -382,7 +385,8 @@ export default function UnitRegister({
                         )}
                       </td>
                       <td className="px-4 py-4">
-                        <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                        <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${occupancyStyles[unit.occupancyStatus]}`}>
+                          <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
                           {occupancyLabels[unit.occupancyStatus]}
                         </span>
                       </td>
@@ -442,14 +446,14 @@ export default function UnitRegister({
             </p>
           )}
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            Enter the flat number exactly as displayed, including leading zeros.
+            Enter the full flat number, e.g. 2004. Wing and floor are separate; neither is added to the flat number.
           </p>
 
           <form onSubmit={saveUnit} noValidate className="mt-6 space-y-5">
             {([
               ["flatNumber", "Flat number", "e.g. 001", true],
               ["wing", "Wing", "e.g. A", false],
-              ["floorLabel", "Floor label", "e.g. G or 1", false],
+              ["floorLabel", "Floor", "e.g. G, 1 or 2 — without the wing", false],
             ] as const).map(([name, label, placeholder, required]) => (
               <div key={name}>
                 <label htmlFor={`unit-${name}`} className="text-sm font-medium">

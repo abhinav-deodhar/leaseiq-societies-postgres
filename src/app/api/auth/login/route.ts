@@ -7,9 +7,9 @@ import {
   verifyPassword,
 } from "@/lib/server/auth/password";
 import {
-  createMobileSession,
-  MobileSignInNotAllowedError,
-} from "@/lib/server/auth/services/mobile-session-service";
+  createPasswordSession,
+  PasswordSessionRejectedError,
+} from "@/lib/server/auth/password-session";
 import {
   JsonRequestError,
   readBoundedJson,
@@ -233,48 +233,27 @@ export async function POST(request: Request) {
       );
     }
 
-    if (client === "android") {
-      const mobileSession = await createMobileSession(
-        user.id,
-        portal === "resident" ? "resident" : "chairman",
-      );
+    const authenticated = await createPasswordSession({
+      userId: user.id,
+      expectedPasswordHash: user.password_hash,
+      portal,
+      client,
+    });
 
-      return json(
-        {
-          message: "Signed in successfully.",
-          ...mobileSession,
-        },
-        200,
-      );
+    if (authenticated.client === "android") {
+      return json({
+        message: "Signed in successfully.",
+        ...authenticated.session,
+      }, 200);
     }
 
-    const token = randomBytes(32).toString("hex");
+    const response = json({
+      message: "Signed in successfully.",
+      user: authenticated.user,
+      expiresAt: authenticated.expiresAt,
+    }, 200);
 
-    const session = await database.query<{ expires_at: Date }>(
-      `INSERT INTO auth_sessions (
-         user_id, token_hash, portal, expires_at
-       )
-       VALUES (
-         $1, $2, $3, clock_timestamp() + INTERVAL '8 hours'
-       )
-       RETURNING expires_at`,
-      [user.id, sha256(token), portal],
-    );
-
-    const response = json(
-      {
-        message: "Signed in successfully.",
-        user: {
-          id: user.id,
-          fullName: user.full_name,
-          portal,
-        },
-        expiresAt: session.rows[0].expires_at.toISOString(),
-      },
-      200,
-    );
-
-    response.cookies.set(`leaseiq_${portal}_session`, token, {
+    response.cookies.set(`leaseiq_${portal}_session`, authenticated.token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
@@ -284,9 +263,9 @@ export async function POST(request: Request) {
 
     return response;
   } catch (error) {
-    if (error instanceof MobileSignInNotAllowedError) {
+    if (error instanceof PasswordSessionRejectedError) {
       return json(
-        { message: "This account cannot sign in to the app." },
+        { message: "Your account changed during sign-in. Please sign in again." },
         403,
       );
     }

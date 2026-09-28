@@ -113,6 +113,14 @@ export async function authoriseResidentDocumentRead(
                AND m.relationship = 'owner'
                AND m.status = 'active'
                AND source.status = 'approved'
+               AND (
+                 d.kind <> 'rental_agreement' OR NOT EXISTS (
+                   SELECT 1 FROM owner_transfers ownership_transfer
+                   WHERE ownership_transfer.request_id = m.source_request_id
+                     AND ownership_transfer.status = 'completed'
+                     AND d.created_at < ownership_transfer.completed_at
+                 )
+               )
            ),
 
            'isAuthorisedChairman', EXISTS (
@@ -136,7 +144,7 @@ export async function authoriseResidentDocumentRead(
                  AND own_request.society_id = d.society_id
                  AND own_request.tenancy_id = d.tenancy_id
                  AND own_request.relationship = 'tenant'
-                 AND own_request.status IN ('draft', 'pending')
+                 AND own_request.status IN ('draft', 'pending', 'changes_requested')
                  AND own_request.owner_review_status <> 'rejected'
              ),
 

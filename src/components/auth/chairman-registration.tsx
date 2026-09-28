@@ -102,7 +102,12 @@ function responseMessage(body: unknown, fallback: string): string {
   return fallback;
 }
 
-export default function ChairmanRegistration() {
+export default function ChairmanRegistration({
+  portal = "chairman",
+}: {
+  portal?: "chairman" | "resident";
+}) {
+  const isResident = portal === "resident";
   const requestInProgress = useRef(false);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -360,7 +365,7 @@ export default function ChairmanRegistration() {
     <main className="min-h-screen bg-[#f3f6f4] px-5 py-10 font-sans text-slate-900">
       <div className="mx-auto max-w-2xl">
         <Link
-          href="/chairman/login"
+          href={`/${portal}/login`}
           className="text-xl font-semibold text-emerald-900"
         >
           leaseIq societies
@@ -368,7 +373,7 @@ export default function ChairmanRegistration() {
 
         <section className="mt-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-10">
           <p className="text-sm font-semibold text-emerald-800">
-            Chairman registration
+            {isResident ? "Resident registration" : "Chairman registration"}
           </p>
 
           <h1 className="mt-2 text-3xl font-semibold">
@@ -420,11 +425,13 @@ export default function ChairmanRegistration() {
               <p className="mb-5 text-sm leading-6 text-slate-600">
                 All fields are required. Verify your email to activate
                 your account. Your mobile number is saved as unverified.
-                Society details come after account verification.
+                {isResident
+                  ? "After signing in, choose your city, society and flat, then select Owner or Tenant."
+                  : "Society details come after account verification."}
               </p>
 
               <fieldset disabled={busy} className="space-y-5">
-                <legend className="sr-only">Chairman details</legend>
+                <legend className="sr-only">{isResident ? "Resident details" : "Chairman details"}</legend>
 
                 {fields.map((field) => (
                   <div key={field.name}>
@@ -572,17 +579,17 @@ export default function ChairmanRegistration() {
                 className="rounded-2xl bg-emerald-50 p-5 text-emerald-900"
               >
                 <h2 className="text-lg font-semibold">
-                  Your chairman account is ready
+                  {isResident ? "Your resident account is ready" : "Your chairman account is ready"}
                 </h2>
                 <p className="mt-2 text-sm leading-6">
-                  Your email is verified. Your mobile number remains
-                  unverified. You can now sign in. Society approval and
-                  subscription activation are separate steps.
+                  {isResident
+                    ? "Your email is verified. Sign in to connect your flat and submit your application. Your mobile number remains unverified. Flat access requires approval."
+                    : "Your email is verified. Your mobile number remains unverified. You can now sign in. Society approval and subscription activation are separate steps."}
                 </p>
               </div>
 
               <Link
-                href="/chairman/login"
+                href={`/${portal}/login`}
                 className="mt-5 inline-flex rounded-xl bg-emerald-800 px-5 py-3 font-semibold text-white hover:bg-emerald-900"
               >
                 Continue to sign in
@@ -594,7 +601,7 @@ export default function ChairmanRegistration() {
             <p className="mt-6 text-sm text-slate-600">
               Already registered?{" "}
               <Link
-                href="/chairman/login"
+                href={`/${portal}/login`}
                 className="font-semibold text-emerald-800 underline"
               >
                 Sign in

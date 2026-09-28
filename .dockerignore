@@ -1,0 +1,29 @@
+# Include only application/build inputs.
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!package-lock.json
+!next.config.*
+!next-env.d.ts
+!tsconfig*.json
+!postcss.config.*
+!tailwind.config.*
+!eslint.config.*
+!src/
+!src/**
+!public/
+!public/**
+!scripts/
+!scripts/**
+!migrations/
+!migrations/**
+
+# Never include local credentials or private keys.
+**/.env*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/node_modules/
+**/.git/

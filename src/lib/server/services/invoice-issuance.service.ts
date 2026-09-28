@@ -1,3 +1,4 @@
+import { effectiveUnitOccupancySql } from "@/lib/server/repositories/unit-occupancy";
 import "server-only";
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
@@ -200,7 +201,7 @@ async function buildReview(
        u.flat_number AS "flatNumber",
        u.floor_label AS "floorLabel",
        t.name AS "unitTypeName",
-       u.occupancy_status AS "occupancyStatus",
+       ${effectiveUnitOccupancySql} AS "occupancyStatus",
        COALESCE(
          (
            SELECT array_agg(c.full_name ORDER BY c.full_name, c.id)

@@ -17,6 +17,8 @@ export default function WorkspaceNavigation({
     { href: "/chairman", label: "Dashboard" },
     { href: "/chairman/society", label: "Society details" },
     { href: "/chairman/units", label: "Unit register" },
+    { href: "/chairman/resident-applications", label: "Resident applications" },
+    { href: "/chairman/owner-transfers", label: "Ownership transfers" },
     { href: "/chairman/invoices", label: "Invoices" },
   ];
 

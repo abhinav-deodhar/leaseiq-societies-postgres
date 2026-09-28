@@ -1,3 +1,4 @@
+import { effectiveUnitOccupancySql } from "@/lib/server/repositories/unit-occupancy";
 import "server-only";
 import type { PoolClient } from "pg";
 import { withChairmanUnitAccess } from "./units.service";
@@ -50,7 +51,7 @@ export async function listFlatBillingInTransaction(client: PoolClient, societyId
         SUM(i.total_paise) AS billed, SUM(COALESCE(r.received,0)) AS received
       FROM society_invoices i LEFT JOIN receipts r ON r.invoice_id = i.id
       WHERE i.society_id = $1 AND i.status = 'issued' GROUP BY i.unit_id
-    ) SELECT u.id, u.wing, u.flat_number AS "flatNumber", u.occupancy_status AS occupancy,
+    ) SELECT u.id, u.wing, u.flat_number AS "flatNumber", ${effectiveUnitOccupancySql} AS occupancy,
        COALESCE(c.owners, ARRAY[]::text[]) AS owners, COALESCE(c.tenants, ARRAY[]::text[]) AS tenants,
        COALESCE(b.count,0)::integer AS "billCount", COALESCE(b.paid,0)::integer AS "paidCount",
        COALESCE(b.outstanding,0)::integer AS "outstandingCount",
@@ -77,7 +78,9 @@ export async function getFlatBills(userId: string, societyId: string, unitId: st
 export async function getFlatBillsInTransaction(client: PoolClient, societyId: string, unitId: string, page: number, paidOnly: boolean | BillingFilter) {
     const filter = normalizeBillingFilter(paidOnly);
     const flat = await client.query<{ wing: string; flatNumber: string; occupancy: string }>(
-      'SELECT wing, flat_number AS "flatNumber", occupancy_status AS occupancy FROM society_units WHERE society_id=$1 AND id=$2', [societyId,unitId]);
+      `SELECT u.wing, u.flat_number AS "flatNumber",
+        ${effectiveUnitOccupancySql} AS occupancy
+      FROM society_units u WHERE u.society_id=$1 AND u.id=$2`, [societyId,unitId]);
     if (!flat.rows[0]) return null;
     const contacts = await client.query<{ fullName: string; role: string }>(`SELECT full_name AS "fullName", role FROM unit_billing_contacts
       WHERE society_id=$1 AND unit_id=$2 AND starts_on <= (clock_timestamp() AT TIME ZONE 'Asia/Kolkata')::date
