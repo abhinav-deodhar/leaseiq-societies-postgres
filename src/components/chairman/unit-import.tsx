@@ -8,6 +8,7 @@ import {
   type UnitTypeSummary,
 } from "@/lib/contracts/units";
 import type { UnitImportResult } from "@/lib/contracts/unit-import";
+import { validateUnitWorkbookBounds } from "@/lib/contracts/unit-workbook-bounds";
 
 type PreviewRow = {
   sheetRow: number;
@@ -75,11 +76,7 @@ export default function UnitImport({
         }
       });
 
-      if (sheet.columnCount > 4 || sheet.rowCount > 501) {
-        throw new Error(
-          "Use only the four template columns and up to 500 rows below the headings.",
-        );
-      }
+      validateUnitWorkbookBounds(sheet);
 
       const parsed: PreviewRow[] = [];
       const errors: string[] = [];
