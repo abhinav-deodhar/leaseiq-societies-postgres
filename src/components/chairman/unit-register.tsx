@@ -4,6 +4,8 @@ import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import UnitDownloads from "./unit-downloads";
 import UnitImport from "./unit-import";
+import UnitDeletionDialog from "./unit-deletion-dialog";
+import type { UnitDeletionTarget } from "@/lib/contracts/unit-deletion";
 import {
   createUnitSchema,
   type UnitListResponse,
@@ -53,6 +55,8 @@ export default function UnitRegister({
   initialData: RegisterData;
 }) {
   const router = useRouter();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deletionTarget, setDeletionTarget] = useState<UnitDeletionTarget | null>(null);
   const [data, setData] = useState(initialData);
   const [form, setForm] = useState<FormValues>(emptyForm);
   const [editingUnit, setEditingUnit] =
@@ -255,11 +259,23 @@ export default function UnitRegister({
 
   return (
     <div className="mt-8">
+      {deletionTarget && <UnitDeletionDialog
+        societyId={societyId}
+        target={deletionTarget}
+        onClose={() => setDeletionTarget(null)}
+        onDeleted={async (deleted, blocked) => {
+          setSelectedIds([]);
+          setSearch("");
+          setNotice(`${deleted} flats deleted. ${blocked} protected flats retained.`);
+          await fetchPage(1, "");
+          setDeletionTarget(null);
+        }}
+      />}
       <UnitDownloads societyId={societyId} />
       <UnitImport
         societyId={societyId}
         unitTypes={data.unitTypes}
-        disabled={busy !== null || editingUnit !== null}
+        disabled={busy !== null || deletionTarget !== null || editingUnit !== null}
         onImported={async () => {
           setSearch("");
           await refresh(1, "");
@@ -278,6 +294,23 @@ export default function UnitRegister({
         )}
       </div>
 
+      <div className="mt-5 flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-sm text-slate-600">{selectedIds.length} selected across pages (maximum 500).</p>
+        <button type="button" disabled={busy !== null || deletionTarget !== null || editingUnit !== null || selectedIds.length === 0}
+          onClick={() => setDeletionTarget({ scope: "selected", ids: [...selectedIds] })}
+          className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50">
+          Delete selected
+        </button>
+        <button type="button" disabled={busy !== null || deletionTarget !== null || selectedIds.length === 0}
+          onClick={() => setSelectedIds([])}
+          className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-50">Clear selection</button>
+        <button type="button" disabled={busy !== null || deletionTarget !== null || editingUnit !== null}
+          onClick={() => setDeletionTarget({ scope: "all" })}
+          className="rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50">
+          Delete all units…
+        </button>
+        <p className="w-full text-xs text-slate-500">Delete all covers the whole society, regardless of search or page. Every deletion requires a preview and confirmation.</p>
+      </div>
       <div className="mt-5 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
         <section
           aria-labelledby="register-title"
@@ -296,7 +329,7 @@ export default function UnitRegister({
               </div>
               <button
                 type="button"
-                disabled={busy !== null}
+                disabled={busy !== null || deletionTarget !== null}
                 onClick={() => void refresh(data.page, activeSearch)}
                 className="rounded-lg px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
               >
@@ -314,11 +347,11 @@ export default function UnitRegister({
                 onChange={(event) => setSearch(event.target.value)}
                 maxLength={80}
                 placeholder="Search wing, floor, or flat…"
-                disabled={busy !== null}
+                disabled={busy !== null || deletionTarget !== null}
                 className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-100"
               />
               <button
-                disabled={busy !== null}
+                disabled={busy !== null || deletionTarget !== null}
                 className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
               >
                 Search
@@ -326,7 +359,7 @@ export default function UnitRegister({
               {activeSearch && (
                 <button
                   type="button"
-                  disabled={busy !== null}
+                  disabled={busy !== null || deletionTarget !== null}
                   onClick={() => {
                     setSearch("");
                     void refresh(1, "");
@@ -356,6 +389,18 @@ export default function UnitRegister({
                 <caption className="sr-only">Society physical unit register</caption>
                 <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <tr>
+                    <th scope="col" className="px-3 py-3">
+                      <input type="checkbox" aria-label="Select all flats on this page"
+                        disabled={busy !== null || deletionTarget !== null || editingUnit !== null}
+                        checked={data.units.length > 0 && data.units.every((unit) => selectedIds.includes(unit.id))}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          const pageIds = data.units.map((unit) => unit.id);
+                          setSelectedIds((current) => checked
+                            ? Array.from(new Set([...current, ...pageIds])).slice(0, 500)
+                            : current.filter((id) => !pageIds.includes(id)));
+                        }} />
+                    </th>
                     <th scope="col" className="px-6 py-3">Wing</th>
                     <th scope="col" className="px-4 py-3">Flat number</th>
                     <th scope="col" className="px-4 py-3">Floor</th>
@@ -374,6 +419,17 @@ export default function UnitRegister({
                           : "hover:bg-slate-50/70"
                       }
                     >
+                      <td className="px-3 py-4">
+                        <input type="checkbox" aria-label={`Select flat ${unit.flatNumber} in wing ${unit.wing || "No wing"}`}
+                          checked={selectedIds.includes(unit.id)}
+                          disabled={busy !== null || deletionTarget !== null || editingUnit !== null || (selectedIds.length >= 500 && !selectedIds.includes(unit.id))}
+                          onChange={(event) => {
+                            const checked = event.target.checked;
+                            setSelectedIds((current) => checked
+                              ? Array.from(new Set([...current, unit.id])).slice(0, 500)
+                              : current.filter((id) => id !== unit.id));
+                          }} />
+                      </td>
                       <td className="px-6 py-4">{unit.wing || "No wing"}</td>
                       <td className="px-4 py-4 font-semibold">{unit.flatNumber}</td>
                       <td className="px-4 py-4 text-slate-600">
@@ -393,12 +449,19 @@ export default function UnitRegister({
                       <td className="px-4 py-4 text-right">
                         <button
                           type="button"
-                          disabled={busy !== null || editingUnit !== null}
+                          disabled={busy !== null || deletionTarget !== null || editingUnit !== null}
                           onClick={() => startEditing(unit)}
                           aria-label={`Edit flat ${unit.flatNumber}${unit.wing ? ` in wing ${unit.wing}` : ""}`}
                           className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-emerald-800 transition hover:border-emerald-300 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700 disabled:opacity-50"
                         >
                           {editingUnit?.id === unit.id ? "Editing" : "Edit"}
+                        </button>
+                        <button type="button"
+                          disabled={busy !== null || deletionTarget !== null || editingUnit !== null}
+                          onClick={() => setDeletionTarget({ scope: "selected", ids: [unit.id] })}
+                          aria-label={`Delete flat ${unit.flatNumber} in wing ${unit.wing || "No wing"}`}
+                          className="ml-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-700 disabled:opacity-50">
+                          Delete
                         </button>
                       </td>
                     </tr>
@@ -415,7 +478,7 @@ export default function UnitRegister({
             <div className="flex gap-2">
               <button
                 type="button"
-                disabled={busy !== null || data.page <= 1}
+                disabled={busy !== null || deletionTarget !== null || data.page <= 1}
                 onClick={() => void refresh(data.page - 1, activeSearch)}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-40"
               >
@@ -423,7 +486,7 @@ export default function UnitRegister({
               </button>
               <button
                 type="button"
-                disabled={busy !== null || data.page >= pageCount}
+                disabled={busy !== null || deletionTarget !== null || data.page >= pageCount}
                 onClick={() => void refresh(data.page + 1, activeSearch)}
                 className="rounded-lg border border-slate-300 px-3 py-2 text-sm disabled:opacity-40"
               >
@@ -468,7 +531,7 @@ export default function UnitRegister({
                   placeholder={placeholder}
                   maxLength={50}
                   required={required}
-                  disabled={busy !== null}
+                  disabled={busy !== null || deletionTarget !== null}
                   aria-invalid={Boolean(fieldErrors[name])}
                   aria-describedby={fieldErrors[name] ? `${name}-error` : undefined}
                   className={inputClass}
@@ -489,7 +552,7 @@ export default function UnitRegister({
                 id="unit-type"
                 value={form.unitTypeId}
                 onChange={(event) => updateField("unitTypeId", event.target.value)}
-                disabled={busy !== null}
+                disabled={busy !== null || deletionTarget !== null}
                 className={inputClass}
                 aria-invalid={Boolean(fieldErrors.unitTypeId)}
               >
@@ -507,7 +570,7 @@ export default function UnitRegister({
             </div>
 
             <button
-              disabled={busy !== null}
+              disabled={busy !== null || deletionTarget !== null}
               className="w-full rounded-xl bg-emerald-800 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-emerald-700 disabled:opacity-50"
             >
               {busy === "save"
@@ -519,7 +582,7 @@ export default function UnitRegister({
             {editingUnit && (
               <button
                 type="button"
-                disabled={busy !== null}
+                disabled={busy !== null || deletionTarget !== null}
                 onClick={cancelEditing}
                 className="w-full rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
               >
