@@ -49,7 +49,7 @@ export async function loadResidentDashboard(
   const totals = await database.query<{ status: string; count: number }>(
     `SELECT status, count(*)::integer AS count
      FROM resident_unit_requests
-     WHERE user_id = $1 GROUP BY status`,
+     WHERE user_id = $1 AND deleted_at IS NULL GROUP BY status`,
     [userId],
   );
 
@@ -60,7 +60,7 @@ export async function loadResidentDashboard(
      FROM resident_unit_requests r
      JOIN societies s ON s.id = r.society_id
      JOIN society_units u ON u.id = r.unit_id AND u.society_id = r.society_id
-     WHERE r.user_id = $1
+     WHERE r.user_id = $1 AND r.deleted_at IS NULL
      ORDER BY CASE r.status
        WHEN 'changes_requested' THEN 0
        WHEN 'draft' THEN 1

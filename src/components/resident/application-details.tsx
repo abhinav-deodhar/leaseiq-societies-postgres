@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import PrimaryAddressEditor from "@/components/resident/primary-address";
 import type { PrimaryAddressState } from "@/lib/contracts/primary-address";
 import Link from "next/link";
+import DeleteDraft from "./delete-draft";
+import OnboardingForm from "./onboarding-form";
+import PersonalDetailsCard from "./personal-details";
 import ApplicationAttachments from "./application-attachments";
 import OwnerOccupancyEditor from "./owner-occupancy-editor";
 import { awayOccupancySchema, occupancyDisplay } from "@/lib/contracts/occupancy";
@@ -91,12 +94,13 @@ function emptyProfile(account: Account): ResidentProfile {
 }
 
 export default function ApplicationDetails({
-  societyId, unitId, onBusy, onChooseFlat,
+  societyId, unitId, onBusy, onChooseFlat, requestId,
 }: {
   societyId: string;
   unitId: string;
   onBusy: (busy: boolean) => void;
   onChooseFlat?: () => void;
+  requestId?: string;
 }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [error, setError] = useState("");
@@ -105,6 +109,7 @@ export default function ApplicationDetails({
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({ kind: "draft", societyId, unitId });
+    if (requestId) params.set("requestId",requestId);
     Promise.all([
       getJson("/api/resident/onboarding?kind=account", controller.signal),
       getJson(`/api/resident/onboarding?${params}`, controller.signal),
@@ -125,7 +130,7 @@ export default function ApplicationDetails({
       }
     });
     return () => controller.abort();
-  }, [societyId, unitId, attempt]);
+  }, [societyId, unitId, attempt, requestId]);
 
   function reload() {
     setLoaded(null);
@@ -190,6 +195,9 @@ function DetailsEditor({
   reload: () => void;
 }) {
   const [draft, setDraft] = useState(loaded.draft);
+  const [home,setHome]=useState({societyId,unitId,label:"Current selected flat"});
+  const [choosingHome,setChoosingHome]=useState(false);
+  const [editingAccount,setEditingAccount]=useState(false);
   const [profile, setProfile] = useState<ResidentProfile>(() => {
     const saved = loaded.draft?.applicantProfile ?? emptyProfile(loaded.account);
     return {
@@ -237,7 +245,7 @@ function DetailsEditor({
     updateProfile({
       familyMembers: [],
       ...(value === "tenant"
-        ? { residesInFlat: true } : {}),
+        ? { residesInFlat: true, occupancyWhenAway: undefined } : {}),
     });
     if (value === "owner") setEndDate("");
     setError("");
@@ -254,7 +262,7 @@ function DetailsEditor({
 
   function details() {
     return {
-      unitId, relationship,
+      unitId:home.unitId, relationship,
       moveInDate: profile.residesInFlat ? moveInDate : "",
       tenancyEndDate: relationship === "tenant" ? endDate : "",
       applicantNote: note,
@@ -297,6 +305,8 @@ function DetailsEditor({
 
   async function save() {
     if (saving.current || needsReload || !validate(true)) return;
+    const replacing=!!draft && (home.societyId!==societyId || home.unitId!==unitId || relationship!==draft.relationship);
+    if(replacing && !window.confirm("Changing flat or role replaces this draft. Its documents will be removed and must be uploaded again. Continue?")) return;
     const parsed = residentApplicationProfileSchema.parse({ relationship, profile });
     saving.current = true;
     setBusy(true);
@@ -309,6 +319,7 @@ function DetailsEditor({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           societyId,
+          ...(replacing ? {replaceDraft:true,targetSocietyId:home.societyId} : {}),
           details: details(),
           profile: parsed.profile,
           ...(draft ? { requestId: draft.id, expectedRevision: draft.revision } : {}),
@@ -323,6 +334,7 @@ function DetailsEditor({
       if (!body.request?.id || !Number.isInteger(body.request.revision)) {
         throw new Error("Saving was not confirmed. Reload the saved version.");
       }
+      if(replacing) { router.replace(`/resident/applications/${body.request.id}/edit`); router.refresh(); return; }
       setDraft(body.request);
       setProfile(parsed.profile);
       setMessage("");
@@ -383,6 +395,7 @@ function DetailsEditor({
       </div>
 
       <ApplicationAttachments requestId={draft.id} relationship={relationship} editable />
+      {draft.status === "draft" && <DeleteDraft societyId={societyId} requestId={draft.id} revision={draft.revision} />}
       <div className="flex flex-wrap gap-3 border-t border-slate-200 pt-5">
         <Link href="/resident"
           className="inline-flex min-h-11 items-center rounded-lg bg-emerald-800 px-5 py-3 text-sm font-semibold text-white">
@@ -424,6 +437,12 @@ function DetailsEditor({
     {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-800">{error}</p>}
     {message && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-emerald-900">{message}</p>}
 
+    {draft?.status === "draft" && <section className="rounded-xl border border-slate-200 p-4">
+      <p className="font-semibold">{home.label}</p>
+      <p className="mt-2 text-sm text-slate-600">Changing society, flat or role requires uploading documents again after saving.</p>
+      <button type="button" disabled={busy} className={secondary} onClick={()=>setChoosingHome(!choosingHome)}>{choosingHome?"Cancel home selection":"Change society or flat"}</button>
+      {choosingHome && <OnboardingForm onSelect={value=>{setHome(value);setChoosingHome(false);}} />}
+    </section>}
     <fieldset disabled={busy || needsReload} className="space-y-5">
       {step === 0 && <>
         <label className="block">
@@ -441,7 +460,9 @@ function DetailsEditor({
         <div className="rounded-lg bg-slate-50 p-4">
           <p className="text-sm text-slate-500">Account name</p>
           <p className="mt-1 font-medium">{account.fullName}</p>
-          <p className="mt-1 text-sm text-slate-600">The same account identity is used for every flat.</p>
+          <p className="mt-1 text-sm text-slate-600">The same account identity is used for every flat. Email and phone are verified account contacts.</p>
+          <button type="button" className={secondary} onClick={()=>setEditingAccount(!editingAccount)}>Edit account details</button>
+          {editingAccount && <PersonalDetailsCard onSaved={reload} />}
         </div>
         <div className="grid gap-4 rounded-xl bg-slate-50 p-4 sm:grid-cols-2">
           <label>Email address
@@ -561,6 +582,8 @@ function DetailsEditor({
       </div>
     </fieldset>
 
+    {draft && <ApplicationAttachments key={`${draft.id}:${draft.relationship}`} requestId={draft.id} relationship={draft.relationship} editable={!busy} />}
+    {draft?.status === "draft" && <DeleteDraft societyId={societyId} requestId={draft.id} revision={draft.revision} />}
     {needsReload && <button type="button" className={secondary} disabled={busy}
       onClick={() => {
         if (window.confirm("Reload the saved version? Unsaved edits on this screen will be replaced.")) reload();

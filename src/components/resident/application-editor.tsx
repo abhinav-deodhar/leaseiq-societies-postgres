@@ -5,10 +5,11 @@ import ApplicationDetails from "./application-details";
 const onBusy = (_busy: boolean) => { void _busy; };
 
 export default function ApplicationEditor({
-  societyId, unitId,
+  societyId, unitId, requestId,
 }: {
+  requestId: string;
   societyId: string;
   unitId: string;
 }) {
-  return <ApplicationDetails societyId={societyId} unitId={unitId} onBusy={onBusy} />;
+  return <ApplicationDetails requestId={requestId} societyId={societyId} unitId={unitId} onBusy={onBusy} />;
 }

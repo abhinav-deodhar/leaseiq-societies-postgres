@@ -26,7 +26,7 @@ export default async function EditApplicationPage({
      FROM resident_unit_requests r
      JOIN societies s ON s.id = r.society_id
      JOIN society_units u ON u.id = r.unit_id AND u.society_id = r.society_id
-     WHERE r.id = $1 AND r.user_id = $2`,
+     WHERE r.id = $1 AND r.user_id = $2 AND r.deleted_at IS NULL`,
     [requestId, session.userId],
   );
   const application = result.rows[0];
@@ -45,12 +45,12 @@ export default async function EditApplicationPage({
         Floor {application.floor || "—"} · Flat {application.flatNumber}
       </p>
       {application.reviewNote && <section className="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-5">
-        <h2 className="font-semibold">Chairman’s feedback</h2>
+        <h2 className="font-semibold">Review feedback</h2>
         <p className="mt-2 whitespace-pre-wrap">{application.reviewNote}</p>
       </section>}
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 sm:p-8">
         {editable
-          ? <ApplicationEditor societyId={application.societyId} unitId={application.unitId} />
+          ? <ApplicationEditor key={requestId} requestId={requestId} societyId={application.societyId} unitId={application.unitId} />
           : <p>This application is no longer editable. Return to its status page.</p>}
       </section>
     </div>

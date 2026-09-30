@@ -1,3 +1,4 @@
+import { deleteResidentDraft } from "@/lib/server/services/resident-requests.service";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { getSessionFromToken, readSessionToken } from "@/lib/server/auth/session";
@@ -44,4 +45,14 @@ export async function POST(request: NextRequest) {
       session.userId, data.societyId, data.requestId, data.expectedRevision,
     ) });
   } catch (error) { return applicationInboxFailure(error); }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    checkRequestOrigin(request);
+    const session=await authenticate(request);
+    const input=submission.safeParse(await readJsonBody(request,4096));
+    if(!input.success) throw new HttpError(400,"Reload and check the draft.");
+    return jsonNoStore(await deleteResidentDraft(session.userId,input.data.societyId,input.data.requestId,input.data.expectedRevision));
+  } catch(error) { return applicationInboxFailure(error); }
 }

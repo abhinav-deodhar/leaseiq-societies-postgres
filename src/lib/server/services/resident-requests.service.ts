@@ -111,9 +111,11 @@ export async function withResidentRequestAccess<T>(
   userId: string,
   societyId: string,
   operation: (client: PoolClient) => Promise<T>,
+  additionalSocietyId?: string,
 ): Promise<T> {
   requireUuid(userId);
   requireUuid(societyId);
+  if (additionalSocietyId) requireUuid(additionalSocietyId);
 
   const client = await getDatabase().connect();
   let begun = false;
@@ -124,7 +126,9 @@ export async function withResidentRequestAccess<T>(
     begun = true;
 
     // Same society lock order as chairman unit operations.
-    await lockSocietyUnitManagement(client, societyId);
+    for (const id of [...new Set([societyId, additionalSocietyId].filter((id): id is string => !!id))].sort()) {
+      await lockSocietyUnitManagement(client, id);
+    }
 
     const account = await client.query(
       `SELECT u.id
@@ -157,6 +161,7 @@ export async function withResidentRequestAccess<T>(
       );
     }
 
+    for (const checkedSociety of new Set([societyId, additionalSocietyId].filter((id): id is string => !!id))) {
     const society = await client.query(
       `SELECT s.id
        FROM societies s
@@ -165,7 +170,7 @@ export async function withResidentRequestAccess<T>(
          AND a.status = 'approved'
          AND s.service_status IN ('inactive', 'active')
        FOR SHARE OF s, a`,
-      [societyId],
+      [checkedSociety],
     );
 
     if (society.rowCount !== 1) {
@@ -176,6 +181,7 @@ export async function withResidentRequestAccess<T>(
       );
     }
 
+    }
     const result = await operation(client);
     await client.query("COMMIT");
     begun = false;
@@ -604,4 +610,65 @@ export async function submitOwnerApplication(
     );
     return updated.rows[0];
   });
+}
+
+async function discardDraft(client: PoolClient, userId: string, societyId: string, requestId: string, expectedRevision: number) {
+  const result = await client.query<{status:string;revision:number;tenancy_id:string|null}>(
+    `SELECT status,revision,tenancy_id FROM resident_unit_requests
+     WHERE id=$1 AND society_id=$2 AND user_id=$3 AND deleted_at IS NULL FOR UPDATE`,
+    [requestId,societyId,userId]);
+  const row=result.rows[0];
+  if (!row) throw new ResidentRequestError("NOT_FOUND","Draft not found.",404);
+  if (row.status!=="draft") throw new ResidentRequestError("NOT_EDITABLE","Only an unsubmitted draft can be deleted or moved to another flat or role.",409);
+  if(row.revision!==expectedRevision) throw new ResidentRequestError("REVISION_CONFLICT","Your draft changed. Refresh before continuing.",409);
+  if(row.tenancy_id) {
+    const shared=await client.query(`SELECT 1 FROM resident_unit_requests WHERE tenancy_id=$1 AND id<>$2`,[row.tenancy_id,requestId]);
+    if(shared.rowCount) throw new ResidentRequestError("NOT_EDITABLE","This tenancy is linked to another application.",409);
+    const lease=await client.query(`UPDATE resident_tenancies SET status='cancelled',ended_at=clock_timestamp(),ended_by=$2,
+      end_reason='Applicant deleted or replaced draft',revision=revision+1,updated_at=clock_timestamp()
+      WHERE id=$1 AND created_by=$2 AND status='draft' RETURNING id`,[row.tenancy_id,userId]);
+    if(!lease.rowCount) throw new ResidentRequestError("NOT_EDITABLE","This tenancy is no longer a draft.",409);
+    await client.query(`INSERT INTO resident_tenancy_events(society_id,tenancy_id,actor_user_id,action)
+      VALUES($1,$2,$3,'cancelled')`,[societyId,row.tenancy_id,userId]);
+  }
+  const docs=await client.query<{id:string}>(`UPDATE resident_documents SET status='deleted',deleted_at=clock_timestamp()
+    WHERE uploaded_by=$1 AND (request_id=$2 OR tenancy_id=$3) AND status<>'deleted' RETURNING id`,[userId,requestId,row.tenancy_id]);
+  for(const doc of docs.rows) await client.query(`INSERT INTO resident_document_events(society_id,document_id,actor_user_id,action,access_basis)
+    VALUES($1,$2,$3,'deleted','self')`,[societyId,doc.id,userId]);
+  await client.query(`UPDATE resident_unit_requests SET status='withdrawn',deleted_at=clock_timestamp(),revision=revision+1,
+    updated_at=clock_timestamp() WHERE id=$1`,[requestId]);
+  await client.query(`INSERT INTO resident_unit_request_events(society_id,request_id,actor_user_id,action,request_revision,details)
+    VALUES($1,$2,$3,'withdrawn',$4,'{"reason":"Draft deleted or replaced by applicant"}')`,[societyId,requestId,userId,row.revision+1]);
+}
+
+export async function deleteResidentDraft(userId:string,societyId:string,requestId:string,expectedRevision:number) {
+  requireUuid(requestId);
+  if(!residentRequestSubmissionSchema.safeParse({expectedRevision}).success) throw new ResidentRequestError("INVALID_INPUT","Invalid revision.",400);
+  return withResidentRequestAccess(userId,societyId,async client=>{
+    await discardDraft(client,userId,societyId,requestId,expectedRevision);
+    return {message:"Draft deleted."};
+  });
+}
+
+export async function replaceResidentDraft(userId:string,societyId:string,requestId:string,expectedRevision:number,
+ targetSocietyId:string,input:unknown,profileInput:unknown):Promise<ResidentRequestRecord> {
+  requireUuid(requestId); requireUuid(targetSocietyId);
+  if(!residentRequestSubmissionSchema.safeParse({expectedRevision}).success) throw new ResidentRequestError("INVALID_INPUT","Invalid revision.",400);
+  const data=parseRequest(input);
+  const profile=parseProfile(data.relationship,profileInput);
+  return withResidentRequestAccess(userId,societyId,async client=>{
+    const snapshot=await accountSnapshot(client,userId,profile);
+    await requireAvailableFlat(client,targetSocietyId,userId,data.unitId);
+    await discardDraft(client,userId,societyId,requestId,expectedRevision);
+    const existing=await client.query(`SELECT id FROM resident_unit_requests WHERE user_id=$1 AND unit_id=$2
+      AND status IN ('draft','pending','changes_requested')`,[userId,data.unitId]);
+    if(existing.rowCount) throw new ResidentRequestError("REQUEST_EXISTS","You already have an open application for that flat. No changes were saved.",409);
+    const saved=await client.query<ResidentRequestRecord>(`INSERT INTO resident_unit_requests
+      (society_id,unit_id,user_id,relationship,move_in_date,tenancy_end_date,applicant_note,applicant_profile,owner_review_status)
+      VALUES($1,$2,$3,$4,$5::date,$6::date,$7,$8::jsonb,CASE WHEN $4='tenant' THEN 'pending' ELSE 'not_required' END)
+      RETURNING ${returnedColumns}`,[targetSocietyId,data.unitId,userId,data.relationship,data.moveInDate,data.tenancyEndDate,
+        data.applicantNote,snapshot===undefined?null:JSON.stringify(snapshot)]);
+    await recordEvent(client,saved.rows[0],userId,"created");
+    return saved.rows[0];
+  },targetSocietyId);
 }

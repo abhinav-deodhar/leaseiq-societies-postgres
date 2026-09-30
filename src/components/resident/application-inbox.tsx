@@ -1,5 +1,6 @@
 "use client";
 
+import DeleteDraft from "./delete-draft";
 import Link from "next/link";
 import ApplicationAttachments from "./application-attachments";
 import TenantReviewInbox from "./tenant-review-inbox";
@@ -22,12 +23,13 @@ function date(value: string | null) {
 }
 
 function ApplicationCard({
-  item, chairman, busy, onAction, initiallyOpen,
+  item, chairman, busy, onAction, initiallyOpen, onDeleted,
 }: {
   item: InboxApplication;
   chairman: boolean;
   busy: boolean;
   initiallyOpen: boolean;
+  onDeleted:()=>void;
   onAction: (
     item: InboxApplication, decision?: "approved" | "rejected" | "changes_requested", note?: string,
   ) => Promise<void>;
@@ -225,6 +227,7 @@ function ApplicationCard({
         <Link href={`/resident/applications/${item.id}/edit`} className="ml-0 block text-sm font-semibold text-emerald-800 underline">
           {item.status === "changes_requested" ? "Edit application" : "Edit draft"}
         </Link>
+        {item.status === "draft" && <DeleteDraft societyId={item.societyId} requestId={item.id} revision={item.revision} onDeleted={onDeleted} />}
       </section>}
 
       {chairman && item.status === "pending" && (
@@ -430,7 +433,7 @@ export default function ApplicationInbox({
               : "Save your application, then submit it for review. Try All applications to find an existing record."}
           </p>
         </div>}
-        {data.items.map((item) => <ApplicationCard
+        {data.items.map((item) => <ApplicationCard onDeleted={()=>{setData(null);setReload(value=>value+1);}}
           key={`${item.id}:${item.revision}`}
           item={item} chairman={chairman} busy={busy}
           initiallyOpen={application === item.id}

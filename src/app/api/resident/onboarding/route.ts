@@ -15,6 +15,7 @@ import {
 } from "@/lib/server/http";
 import { jsonNoStore } from "@/lib/server/http/json";
 import {
+  replaceResidentDraft,
   createResidentRequestDraft,
   updateResidentRequestDraft,
   ResidentRequestError,
@@ -76,6 +77,8 @@ export async function GET(request: NextRequest) {
       if (!societyId.success || !unitId.success) {
         throw new HttpError(400, "Choose a valid society and flat.");
       }
+      const requestId = params.get("requestId");
+      if (requestId && !z.uuid().safeParse(requestId).success) throw new HttpError(400,"Invalid draft.");
       const result = await database.query(
         `SELECT id, society_id AS "societyId", unit_id AS "unitId",
                 relationship, status, revision,
@@ -86,8 +89,9 @@ export async function GET(request: NextRequest) {
          FROM resident_unit_requests
          WHERE user_id = $1 AND society_id = $2 AND unit_id = $3
            AND status IN ('draft', 'pending', 'changes_requested')
+           AND ($4::uuid IS NULL OR id=$4) AND deleted_at IS NULL
          ORDER BY created_at DESC, id DESC LIMIT 1`,
-        [session.userId, societyId.data, unitId.data],
+        [session.userId, societyId.data, unitId.data, requestId],
       );
       const membership = await database.query<{
         relationship: "owner" | "tenant";
@@ -100,6 +104,7 @@ export async function GET(request: NextRequest) {
          LIMIT 1`,
         [session.userId, societyId.data, unitId.data],
       );
+      if(requestId && !result.rows[0]) throw new HttpError(409,"This draft is no longer editable. Return to applications.");
       return jsonNoStore({
         request: result.rows[0] ?? null,
         membership: membership.rows[0] ?? null,
@@ -114,7 +119,7 @@ export async function GET(request: NextRequest) {
          FROM resident_unit_requests r
          JOIN societies s ON s.id = r.society_id
          JOIN society_units u ON u.id = r.unit_id AND u.society_id = r.society_id
-         WHERE r.user_id = $1
+         WHERE r.user_id = $1 AND r.deleted_at IS NULL
          ORDER BY r.created_at DESC, r.id DESC
          LIMIT 50`,
         [session.userId],
@@ -268,6 +273,8 @@ export async function POST(request: NextRequest) {
 }
 
 const updateSchema = createSchema.extend({
+  targetSocietyId: z.uuid().optional(),
+  replaceDraft: z.boolean().optional(),
   requestId: z.uuid(),
   expectedRevision: residentRequestSubmissionSchema.shape.expectedRevision,
 });
@@ -282,7 +289,10 @@ export async function PATCH(request: NextRequest) {
         parsed.error.issues[0]?.message ?? "Check your details.");
     }
     requireOccupancyChoice(parsed.data.details, parsed.data.profile);
-    const draft = await updateResidentRequestDraft(
+    const draft = parsed.data.replaceDraft
+      ? await replaceResidentDraft(session.userId,parsed.data.societyId,parsed.data.requestId,parsed.data.expectedRevision,
+          parsed.data.targetSocietyId ?? parsed.data.societyId,parsed.data.details,parsed.data.profile)
+      : await updateResidentRequestDraft(
       session.userId,
       parsed.data.societyId,
       parsed.data.requestId,

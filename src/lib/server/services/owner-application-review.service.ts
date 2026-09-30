@@ -131,6 +131,7 @@ export async function listApplicationInbox(
            AND r.status IN ('pending', 'changes_requested', 'approved', 'rejected')`
         : "r.user_id = $1::uuid AND $2::uuid IS NULL"
     }
+      AND r.deleted_at IS NULL
       AND ($3 = 'all' OR r.status = $3)
       AND ($4::uuid IS NULL OR r.id = $4::uuid)
     ORDER BY CASE WHEN r.status = 'pending' THEN 0 ELSE 1 END,
@@ -151,6 +152,7 @@ export async function listApplicationInbox(
             AND r.relationship = 'owner'
             AND r.status IN ('pending', 'changes_requested', 'approved', 'rejected')`
          : "r.user_id = $1::uuid AND $2::uuid IS NULL"}
+       AND r.deleted_at IS NULL
        GROUP BY r.status`,
       [userId, societyId],
     );

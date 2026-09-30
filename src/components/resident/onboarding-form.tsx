@@ -7,7 +7,7 @@ import ApplicationDetails from "@/components/resident/application-details";
 
 type Option = { id: string; label: string };
 
-export default function OnboardingForm() {
+export default function OnboardingForm({onSelect}: {onSelect?: (home:{societyId:string;unitId:string;label:string})=>void}) {
   const [city, setCity] = useState<Option | null>(null);
   const [society, setSociety] = useState<Option | null>(null);
   const [wing, setWing] = useState<Option | null>(null);
@@ -57,9 +57,10 @@ export default function OnboardingForm() {
             Edit home
           </button>
         </div>
-        <ApplicationDetails key={`${society.id}:${flat.id}`}
+        {onSelect ? <button type="button" className="mt-5 rounded-lg bg-emerald-800 px-5 py-3 font-semibold text-white"
+          onClick={()=>onSelect({societyId:society.id,unitId:flat.id,label:`${society.label} · Wing ${wing?.label} · Flat ${flat.label}`})}>Use this flat</button> : <ApplicationDetails key={`${society.id}:${flat.id}`}
           societyId={society.id} unitId={flat.id} onBusy={setBusy}
-          onChooseFlat={() => setFlat(null)} />
+          onChooseFlat={() => setFlat(null)} />}
       </> : <div className="space-y-5">
         <p className="text-sm leading-6 text-slate-500">
           Find your society, then select your flat from its registered layout.

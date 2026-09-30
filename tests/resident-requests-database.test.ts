@@ -1,4 +1,6 @@
 import {
+  deleteResidentDraft,
+  replaceResidentDraft,
   submitOwnerApplication,
 } from "../src/lib/server/services/resident-requests.service";
 import {
@@ -179,6 +181,54 @@ test("resident draft database behaviour", async (t) => {
         await client.query("ROLLBACK");
         client.release();
       }
+    });
+
+    await t.test("draft deletion and replacement preserve authorization and audit", async (t) => {
+      const home=randomUUID(), destination=randomUUID();
+      for(const [id,scope] of [[home,society],[destination,otherSociety]]) await pool.query(
+        `INSERT INTO society_units(id,society_id,wing,flat_number,created_by) VALUES($1,$2,'Draft',$3,$4)`,[id,scope,id,applicant]);
+      const draft=await createResidentRequestDraft(applicant,society,{unitId:home,relationship:"tenant",moveInDate:"2026-01-01"});
+      const tenancy=randomUUID(),document=randomUUID();
+      await pool.query(`INSERT INTO resident_tenancies(id,society_id,unit_id,created_by,starts_on) VALUES($1,$2,$3,$4,'2026-01-01')`,[tenancy,society,home,applicant]);
+      await pool.query(`UPDATE resident_unit_requests SET tenancy_id=$2 WHERE id=$1`,[draft.id,tenancy]);
+      await pool.query(`INSERT INTO resident_documents(id,society_id,uploaded_by,kind,tenancy_id,agreement_version,
+        original_filename,storage_bucket,storage_key,declared_content_type,declared_size_bytes,
+        verified_content_type,verified_size_bytes,sha256,status,created_at,verified_at)
+        VALUES($1,$2,$3,'rental_agreement',$4,1,'test.pdf','test',$5,'application/pdf',1,'application/pdf',1,$6,'ready',now(),now())`,
+        [document,society,applicant,tenancy,document,"a".repeat(64)]);
+      await t.test("foreign users and stale revisions cannot delete",async()=>{
+        await assert.rejects(deleteResidentDraft(otherUser,society,draft.id,1),hasCode("NOT_FOUND"));
+        await assert.rejects(deleteResidentDraft(applicant,society,draft.id,2),hasCode("REVISION_CONFLICT"));
+      });
+      await t.test("an invalid destination preserves the original and its files",async()=>{
+        await assert.rejects(replaceResidentDraft(applicant,society,draft.id,1,otherSociety,{unitId:home,relationship:"owner"},undefined),hasCode("NOT_FOUND"));
+        assert.equal((await pool.query("SELECT status FROM resident_documents WHERE id=$1",[document])).rows[0].status,"ready");
+      });
+      const replacement=await replaceResidentDraft(applicant,society,draft.id,1,otherSociety,
+        {unitId:destination,relationship:"owner",applicantNote:"Moved draft"},undefined);
+      await t.test("changing society flat and role cancels old tenancy and revokes file access",async()=>{
+        assert.notEqual(replacement.id,draft.id);assert.equal(replacement.societyId,otherSociety);
+        assert.equal(replacement.relationship,"owner");assert.equal(replacement.applicantNote,"Moved draft");
+        assert.equal((await pool.query("SELECT status FROM resident_tenancies WHERE id=$1",[tenancy])).rows[0].status,"cancelled");
+        assert.equal((await pool.query("SELECT status FROM resident_documents WHERE id=$1",[document])).rows[0].status,"deleted");
+        await assert.rejects(authoriseResidentDocumentRead(applicant,document));
+        const inbox=await listApplicationInbox(applicant,null,{});
+        assert.equal(inbox.items.some(item=>item.id===draft.id),false);
+        assert.equal((await pool.query("SELECT count(*)::int AS n FROM resident_unit_request_events WHERE request_id=$1",[draft.id])).rows[0].n,2);
+      });
+      await t.test("concurrent deletions succeed once and remove draft from dashboard",async()=>{
+        const outcomes=await Promise.allSettled([deleteResidentDraft(applicant,otherSociety,replacement.id,1),deleteResidentDraft(applicant,otherSociety,replacement.id,1)]);
+        assert.equal(outcomes.filter(x=>x.status==="fulfilled").length,1);
+        const dashboard=await loadResidentDashboard(applicant,pool);
+        assert.equal(dashboard.applications.some(item=>item.id===replacement.id),false);
+      });
+      const fresh=await createResidentRequestDraft(applicant,otherSociety,{unitId:destination,relationship:"owner"});
+      await pool.query(`UPDATE resident_unit_requests SET status='pending',submitted_at=clock_timestamp() WHERE id=$1`,[fresh.id]);
+      await t.test("submitted applications cannot be deleted or replaced",async()=>{
+        await assert.rejects(deleteResidentDraft(applicant,otherSociety,fresh.id,1),hasCode("NOT_EDITABLE"));
+        await assert.rejects(replaceResidentDraft(applicant,otherSociety,fresh.id,1,society,{unitId:home,relationship:"owner"},undefined),hasCode("NOT_EDITABLE"));
+      });
+      await pool.query("UPDATE resident_unit_requests SET status='withdrawn' WHERE id=$1",[fresh.id]);
     });
 
     const input = { unitId: unit, relationship: "owner" };
