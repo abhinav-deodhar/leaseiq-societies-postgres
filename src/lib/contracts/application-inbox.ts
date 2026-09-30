@@ -11,6 +11,7 @@ export type InboxApplication = {
   floor: string | null;
   flatNumber: string;
   relationship: "owner" | "tenant";
+  ownerReviewStatus?: "not_required" | "pending" | "approved" | "rejected";
   status: ApplicationStatus;
   revision: number;
   fullName: string;

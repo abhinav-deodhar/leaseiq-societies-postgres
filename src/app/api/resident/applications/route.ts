@@ -6,7 +6,7 @@ import { jsonNoStore } from "@/lib/server/http/json";
 import {
   applicationInboxFailure, applicationInboxFilters,
 } from "@/lib/server/http/application-inbox";
-import { submitOwnerApplication } from "@/lib/server/services/resident-requests.service";
+import { submitResidentApplication } from "@/lib/server/services/tenant-applications.service";
 import { listApplicationInbox } from "@/lib/server/services/owner-application-review.service";
 import { residentRequestSubmissionSchema } from "@/lib/contracts/resident-associations";
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     const input = submission.safeParse(await readJsonBody(request, 4096));
     if (!input.success) throw new HttpError(400, "Reload and check the application.");
     const data = input.data;
-    return jsonNoStore({ request: await submitOwnerApplication(
+    return jsonNoStore({ request: await submitResidentApplication(
       session.userId, data.societyId, data.requestId, data.expectedRevision,
     ) });
   } catch (error) { return applicationInboxFailure(error); }

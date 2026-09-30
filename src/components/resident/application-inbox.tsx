@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import ApplicationAttachments from "./application-attachments";
+import TenantReviewInbox from "./tenant-review-inbox";
 import { occupancyDisplay } from "@/lib/contracts/occupancy";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -62,7 +63,9 @@ function ApplicationCard({
         <span className="font-semibold">{chairman ? name : item.societyName}</span>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
           {chairman && item.status === "pending"
-            ? "Pending review" : applicationStatusLabels[item.status]}
+            ? "Pending review" : item.relationship === "tenant" && item.status === "pending"
+              ? item.ownerReviewStatus === "approved" ? "Awaiting chairman review" : "Awaiting owner verification"
+              : applicationStatusLabels[item.status]}
         </span>
       </span>
       <span className="mt-2 block pl-6 text-sm text-slate-600">
@@ -155,7 +158,9 @@ function ApplicationCard({
 
       {!chairman && item.status === "pending" && <p role="status"
         className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
-        Your application has been submitted. Your society’s chairman will review it.
+        {item.relationship === "tenant" && item.ownerReviewStatus !== "approved"
+          ? "Your application has been submitted to the registered owner for verification. Chairman review follows owner approval."
+          : "Your application has been submitted. Your society’s chairman will review it."}
       </p>}
       {item.status === "approved" && <section
         className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
@@ -200,21 +205,22 @@ function ApplicationCard({
             ? "Read the feedback, edit your application and save your corrections before resubmitting."
             : "This is a saved draft. It is not visible in the chairman’s review inbox."}
         </p>
-        {item.relationship === "owner" && profile && <>
+        {profile && <>
           <label className="flex items-start gap-3 text-sm">
             <input type="checkbox" checked={confirmed} disabled={busy}
               onChange={(event) => setConfirmed(event.target.checked)}
               className="mt-0.5 h-4 w-4 accent-emerald-800" />
-            I have checked these details and want to submit this owner application for review.
+            I have checked these details and want to submit this {item.relationship} application for {item.relationship === "tenant" ? "owner verification" : "chairman review"}.
           </label>
           <button className={button} disabled={busy || !confirmed}
             onClick={() => void onAction(item)}>
-            {item.status === "changes_requested" ? "Resubmit for review" : "Submit for chairman review"}
+            {item.status === "changes_requested" ? "Resubmit for review" : item.relationship === "tenant" ? "Submit for owner verification" : "Submit for chairman review"}
           </button>
         </>}
         {!profile && <p className="text-sm">Complete your personal details before submitting.</p>}
         {item.relationship === "tenant" && <p className="text-sm">
-          Tenant submission will be available with the tenancy and owner-review workflow.
+          A saved move-in date, checked identity document, rental agreement and registered owner are required.
+          Owner verification comes first; chairman approval grants resident access.
         </p>}
         <Link href={`/resident/applications/${item.id}/edit`} className="ml-0 block text-sm font-semibold text-emerald-800 underline">
           {item.status === "changes_requested" ? "Edit application" : "Edit draft"}
@@ -362,7 +368,9 @@ export default function ApplicationInbox({
         ? (decision === "changes_requested"
             ? "Changes requested. The resident can now correct and resubmit this application."
             : `Application ${decision === "approved" ? "approved" : "rejected"}. The resident can see the decision.`)
-        : "Application submitted. You can track the chairman’s decision here.");
+        : item.relationship === "tenant"
+          ? "Application submitted to the owner. Track owner verification and chairman review here."
+          : "Application submitted. You can track the chairman’s decision here.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The action could not be confirmed.");
     } finally {
@@ -380,6 +388,7 @@ export default function ApplicationInbox({
     : ["all", "draft", "pending", "changes_requested", "approved", "rejected", "withdrawn"];
 
   return <section className="mt-7 space-y-5">
+    <TenantReviewInbox societyId={societyId} />
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div aria-label="Filter applications by status"
         className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">

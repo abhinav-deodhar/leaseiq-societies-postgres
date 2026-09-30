@@ -61,6 +61,7 @@ export async function listApplicationInbox(
     SELECT r.id, r.society_id AS "societyId", s.name AS "societyName",
            u.wing, u.floor_label AS floor, u.flat_number AS "flatNumber",
            r.relationship, r.status, r.revision,
+           r.owner_review_status AS "ownerReviewStatus",
            a.full_name AS "fullName", a.email, a.phone,
            r.applicant_profile AS "applicantProfile",
            r.applicant_note AS "applicantNote",
