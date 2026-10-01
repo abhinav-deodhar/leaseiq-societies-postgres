@@ -10,8 +10,8 @@ import {
 const blank: CorrespondenceAddress = {
   line1: "", line2: "", city: "", state: "", pinCode: "",
 };
-const input = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-900 focus:border-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-100";
-const button = "min-h-11 rounded-lg bg-emerald-800 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50";
+const input = "lq-field";
+const button = "lq-button lq-primary";
 
 export default function PrimaryAddressEditor({
   societyId, unitId, onChange,
@@ -99,7 +99,7 @@ export default function PrimaryAddressEditor({
     }
   }
 
-  return <section className="rounded-xl border border-emerald-100 bg-white p-4 sm:p-5"
+  return <section className="lq-section"
     aria-label="Account correspondence address">
     <div className="flex items-start justify-between gap-4">
       <div>

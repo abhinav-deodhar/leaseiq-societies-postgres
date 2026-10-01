@@ -23,7 +23,7 @@ export default function OnboardingForm({onSelect}: {onSelect?: (home:{societyId:
     setFlat(null);
   }
 
-  return <section data-form-panel className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+  return <section data-form-panel className="lq-form lq-panel">
     <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 sm:px-6">
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">
@@ -45,7 +45,7 @@ export default function OnboardingForm({onSelect}: {onSelect?: (home:{societyId:
 
     <div className="p-5 sm:p-6">
       {flat && society ? <>
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+        <div className="lq-home-summary">
           <div className="min-w-0">
             <p className="font-semibold text-emerald-950">{society.label}</p>
             <p className="mt-1 text-sm text-emerald-900">
@@ -54,7 +54,7 @@ export default function OnboardingForm({onSelect}: {onSelect?: (home:{societyId:
           </div>
           <button type="button" disabled={busy} onClick={changeHome}
             className="min-h-11 px-3 text-sm font-semibold text-emerald-900 underline disabled:opacity-50">
-            Edit home
+            Change home
           </button>
         </div>
         {onSelect ? <button type="button" className="mt-5 rounded-lg bg-emerald-800 px-5 py-3 font-semibold text-white"

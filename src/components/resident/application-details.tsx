@@ -52,9 +52,9 @@ type Loaded = {
   } | null;
 };
 
-const field = "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900";
-const primary = "rounded-xl bg-emerald-800 px-5 py-3 font-semibold text-white disabled:opacity-50";
-const secondary = "rounded-xl border border-slate-300 px-5 py-3 font-semibold disabled:opacity-50";
+const field = "lq-field";
+const primary = "lq-button lq-primary";
+const secondary = "lq-button lq-secondary";
 
 async function getJson(url: string, signal: AbortSignal) {
   const response = await fetch(url, { cache: "no-store", signal });
@@ -229,7 +229,7 @@ function DetailsEditor({
     }
   }, [saved]);
   const household = relationship === "owner" && profile.residesInFlat;
-  const steps = household ? ["Your details", "Family members", "Review"] : ["Your details", "Review"];
+  const steps = household ? ["Your details", "Family members", "Review details"] : ["Your details", "Review details"];
   const review = step === steps.length - 1;
 
   function updateProfile(patch: Partial<ResidentProfile>) {
@@ -365,7 +365,7 @@ function DetailsEditor({
   }, []);
 
   if (saved && draft) {
-    return <section data-details className="space-y-6 border-t border-slate-200 pt-6">
+    return <section data-details className="lq-form space-y-6 pt-6">
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-6">
         <span aria-hidden="true"
           className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-800 text-xl text-white">
@@ -418,7 +418,7 @@ function DetailsEditor({
     </section>;
   }
 
-  return <section data-details className="space-y-6 border-t border-slate-200 pt-6">
+  return <section data-details className="lq-form space-y-6 pt-6">
     <div>
       <ol className="mb-5 grid grid-flow-col auto-cols-fr gap-2" aria-label="Application progress">
         {steps.map((title, index) => <li key={title}
@@ -432,15 +432,15 @@ function DetailsEditor({
       </ol>
       <p className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Step {step + 1} of {steps.length}</p>
       <h2 className="mt-2 text-2xl font-semibold">{steps[step]}</h2>
-      <p className="mt-2 text-sm text-slate-600">Save your completed details before changing flats or leaving this page.</p>
+      <p className="mt-2 text-sm text-slate-600">Complete your details, then review and save. Saving a draft does not submit it.</p>
     </div>
     {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-red-800">{error}</p>}
     {message && <p role="status" className="rounded-xl bg-emerald-50 p-4 text-emerald-900">{message}</p>}
 
-    {draft?.status === "draft" && <section className="rounded-xl border border-slate-200 p-4">
+    {draft?.status === "draft" && <section className="lq-home-summary">
       <p className="font-semibold">{home.label}</p>
       <p className="mt-2 text-sm text-slate-600">Changing society, flat or role requires uploading documents again after saving.</p>
-      <button type="button" disabled={busy} className={secondary} onClick={()=>setChoosingHome(!choosingHome)}>{choosingHome?"Cancel home selection":"Change society or flat"}</button>
+      <button type="button" disabled={busy} className={secondary} onClick={()=>setChoosingHome(!choosingHome)}>{choosingHome?"Cancel home selection":"Change home"}</button>
       {choosingHome && <OnboardingForm onSelect={value=>{setHome(value);setChoosingHome(false);}} />}
     </section>}
     <fieldset disabled={busy || needsReload} className="space-y-5">
@@ -571,7 +571,25 @@ function DetailsEditor({
         </>}
       </div>}
 
-      <div className="flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-5">
+      {review && draft && <>
+        <p className="text-sm text-slate-600">
+          Manage documents for your saved draft below. If you changed the home
+          or relationship, save first; you will need to upload documents again.
+        </p>
+        <ApplicationAttachments
+          key={`${draft.id}:${draft.relationship}`}
+          requestId={draft.id}
+          relationship={draft.relationship}
+          editable={!busy && !needsReload &&
+            home.societyId === societyId && home.unitId === unitId &&
+            relationship === draft.relationship}
+        />
+      </>}
+      {review && !draft && <p className="rounded-lg bg-emerald-50 p-4 text-sm text-emerald-950">
+        Save these details to create your draft. You can then upload documents
+        and review the application before submitting.
+      </p>}
+      <div className="lq-form-actions flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-5">
         {step > 0 && <button type="button" className={secondary}
           onClick={() => { setStep(step - 1); setError(""); }}>Back</button>}
         {!review ? <button type="button" className={primary}
@@ -582,7 +600,6 @@ function DetailsEditor({
       </div>
     </fieldset>
 
-    {draft && <ApplicationAttachments key={`${draft.id}:${draft.relationship}`} requestId={draft.id} relationship={draft.relationship} editable={!busy} />}
     {draft?.status === "draft" && <DeleteDraft societyId={societyId} requestId={draft.id} revision={draft.revision} />}
     {needsReload && <button type="button" className={secondary} disabled={busy}
       onClick={() => {

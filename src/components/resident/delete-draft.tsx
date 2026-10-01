@@ -14,7 +14,9 @@ export default function DeleteDraft({societyId,requestId,revision,onDeleted}:{so
    router.refresh();
   }catch(e){setError(e instanceof Error?e.message:"Deletion not confirmed. Refresh before retrying.");lock.current=false;setBusy(false);}
  }
- return <div className="mt-4"><button type="button" disabled={busy} onClick={()=>void remove()}
- className="min-h-11 rounded-lg border border-red-300 px-4 py-2 font-semibold text-red-800 disabled:opacity-50">{busy?"Deleting…":"Delete draft"}</button>
+ return <div className="lq-danger-zone">
+ <p className="mb-3 text-sm text-slate-600">No longer need this application? You can delete this unsubmitted draft.</p>
+ <button type="button" disabled={busy} onClick={()=>void remove()}
+ className="lq-button lq-danger">{busy?"Deleting…":"Delete draft"}</button>
  {error&&<p role="alert" className="mt-2 text-red-800">{error}</p>}</div>;
 }

@@ -18,7 +18,7 @@ export default function ApplicationAttachments({requestId,relationship,editable=
  }catch(e){setError(e instanceof Error&&e.name==='TimeoutError'?'Upload result not confirmed. Refresh files before retrying.':e instanceof Error?e.message:'Upload not confirmed. Refresh before retrying.');}finally{lock.current=false;setBusy(false);}}
  async function remove(id:string){if(lock.current)return;if(!window.confirm('Remove this attachment from the application?'))return;
  lock.current=true;setBusy(true);setError('');try{const r=await fetch(url,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id}),signal:AbortSignal.timeout(20000)});const b=await r.json();if(!r.ok)throw new Error(b.message);setMessage(b.message);setAttempt(a=>a+1);}catch(e){setError(e instanceof Error?e.message:'Removal not confirmed.');}finally{lock.current=false;setBusy(false);}}
- return <section aria-label="Application attachments" className="my-6 rounded-xl border border-slate-200 bg-white p-5">
+ return <section aria-label="Application attachments" className="lq-section my-6">
  <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-lg font-semibold text-slate-900">Supporting documents</h3>
  <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">{relationship==='owner'?'Attach identity or ownership evidence for review. Ownership transfers require ownership evidence.':'Attach your identity document and rental agreement. The agreement is private to authorised tenancy participants and verified owners.'}</p></div>
  <button type="button" disabled={busy} className="min-h-11 px-3 font-semibold text-emerald-800" onClick={()=>{setError('');setLoading(true);setAttempt(a=>a+1);}}>Refresh files</button></div>
@@ -32,7 +32,7 @@ export default function ApplicationAttachments({requestId,relationship,editable=
  {editable&&<fieldset disabled={busy} className="mt-5 grid gap-4 rounded-lg bg-slate-50 p-4 sm:grid-cols-2"><legend className="px-1 text-sm font-semibold">Add an attachment</legend>
  <label className="text-sm font-medium">Document purpose<select value={kind} onChange={e=>setKind(e.target.value)} className="mt-2 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3"><option value="identity">Identity document</option><option value={relationship==='owner'?'ownership_proof':'rental_agreement'}>{relationship==='owner'?'Ownership evidence':'Rental agreement'}</option></select></label>
  <label className="text-sm font-medium">Choose a file<input ref={input} type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={e=>{setFile(e.target.files?.[0]??null);setMessage('');}} className="mt-2 block min-h-11 w-full rounded-lg border border-slate-300 bg-white p-2"/><span className="mt-1 block text-xs text-slate-500">PDF, JPG or PNG · up to 10 MB each · five attachments maximum</span></label>
- <p className="text-sm text-slate-600">Files are checked before becoming available. Uploading does not submit or approve your application.</p>
- <button type="button" onClick={()=>void upload()} disabled={!file||busy} className="min-h-11 rounded-lg bg-emerald-800 px-4 py-3 font-semibold text-white disabled:opacity-50">{busy?'Checking and uploading…':'Upload attachment'}</button></fieldset>}
+ <p className="text-sm text-slate-600">Choose a document purpose and file, then upload. Files are checked before becoming available. Uploading does not submit your application.</p>
+ <button type="button" onClick={()=>void upload()} disabled={!file||busy} className="lq-button lq-primary">{busy?'Uploading and checking file…':'Upload attachment'}</button></fieldset>}
  </section>;
 }

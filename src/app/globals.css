@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f7f8f5;
+  --foreground: #172b26;
 }
 
 @theme inline {
@@ -12,15 +12,179 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* Use a consistent light theme until all surfaces support dark mode. */
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  line-height: 1.6;
+}
+
+
+:root {
+  color-scheme: light;
+  --lq-surface: #ffffff;
+  --lq-muted-surface: #f3f6f3;
+  --lq-text: #172b26;
+  --lq-muted: #52645d;
+  --lq-border: #d4ded7;
+  --lq-accent: #08664e;
+  --lq-accent-hover: #064d3b;
+  --lq-accent-soft: #edf6f0;
+  --lq-danger: #a12622;
+  --lq-danger-soft: #fff5f4;
+  --lq-success: #17613f;
+  --lq-warning: #79520b;
+  --lq-info: #245a79;
+  --lq-space-1: 4px;
+  --lq-space-2: 8px;
+  --lq-space-3: 12px;
+  --lq-space-4: 16px;
+  --lq-space-6: 24px;
+  --lq-space-8: 32px;
+  --lq-space-12: 48px;
+  --lq-radius-control: 10px;
+  --lq-radius-panel: 16px;
+  --lq-control-height: 44px;
+  --lq-form-width: 48rem;
+  --lq-shadow: 0 2px 8px rgb(23 43 38 / 4%);
+}
+
+@layer components {
+  .lq-form {
+    width: 100%;
+    max-width: var(--lq-form-width);
+    margin-inline: auto;
+    color: var(--lq-text);
+    font-size: 1rem;
+    line-height: 1.6;
+  }
+
+  .lq-section {
+    padding-block: var(--lq-space-6);
+    border-top: 1px solid var(--lq-border);
+  }
+
+  .lq-panel {
+    background: var(--lq-surface);
+    border: 1px solid var(--lq-border);
+    border-radius: var(--lq-radius-panel);
+    box-shadow: var(--lq-shadow);
+  }
+
+  .lq-home-summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--lq-space-3);
+    padding: var(--lq-space-4);
+    background: var(--lq-accent-soft);
+    border-radius: var(--lq-radius-control);
+  }
+
+  .lq-field {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    min-height: var(--lq-control-height);
+    margin-top: var(--lq-space-2);
+    padding: 10px 12px;
+    border: 1px solid var(--lq-border);
+    border-radius: var(--lq-radius-control);
+    background: var(--lq-surface);
+    color: var(--lq-text);
+    font: inherit;
+  }
+
+  .lq-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--lq-space-2);
+    min-height: var(--lq-control-height);
+    padding: 10px 16px;
+    border: 1px solid transparent;
+    border-radius: var(--lq-radius-control);
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.4;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+
+  .lq-primary {
+    background: var(--lq-accent);
+    color: white;
+  }
+
+  .lq-primary:hover:not(:disabled) {
+    background: var(--lq-accent-hover);
+  }
+
+  .lq-secondary {
+    background: var(--lq-surface);
+    border-color: var(--lq-border);
+    color: var(--lq-accent);
+  }
+
+  .lq-secondary:hover:not(:disabled) {
+    background: var(--lq-accent-soft);
+    border-color: var(--lq-accent);
+  }
+
+  .lq-danger {
+    background: var(--lq-surface);
+    border-color: var(--lq-danger);
+    color: var(--lq-danger);
+  }
+
+  .lq-danger:hover:not(:disabled) {
+    background: var(--lq-danger-soft);
+  }
+
+  .lq-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .lq-form :where(input, select, textarea, button, a):focus-visible,
+  .lq-button:focus-visible {
+    outline: 3px solid var(--lq-accent);
+    outline-offset: 3px;
+  }
+
+  .lq-form :where(p, label, li, a) {
+    overflow-wrap: anywhere;
+  }
+
+  .lq-danger-zone {
+    margin-top: var(--lq-space-8);
+    padding-top: var(--lq-space-6);
+    border-top: 1px solid var(--lq-border);
+  }
+
+  @media (max-width: 40rem) {
+    .lq-form {
+      font-size: 1rem;
+    }
+
+    .lq-form-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--lq-space-3);
+    }
+
+    .lq-form-actions > button {
+      flex: 1 1 10rem;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .lq-button {
+      transition: none;
+    }
+  }
 }
