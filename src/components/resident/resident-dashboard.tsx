@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import LogoutButton from "@/components/auth/logout-button";
@@ -130,7 +130,12 @@ function HomeCard({ home, selected, onSelect }: {
       <div><dt>Floor</dt><dd>{home.floor || "—"}</dd></div>
       <div><dt>Flat</dt><dd>{home.flatNumber}</dd></div>
     </dl>
-    <OwnerFlatStatus home={home} />
+    <div className="mt-4">
+      <span className={`inline-flex rounded-lg border px-3 py-2 text-xs font-semibold ${occupancyDisplay(home.occupancyBadge, "unknown").tone}`}>
+        {occupancyDisplay(home.occupancyBadge, "unknown").code}
+        {" · "}{occupancyDisplay(home.occupancyBadge, "unknown").label}
+      </span>
+    </div>
     <div className={styles.actions}>
       <button type="button" className={styles.primary} onClick={onSelect}>
         {home.accessState === "upcoming" ? "View upcoming home" : "Open home"}
@@ -144,12 +149,12 @@ function HomeCard({ home, selected, onSelect }: {
 }
 
 export default function ResidentDashboard({
-  fullName, initialView, initialUnit,
+  fullName, initialView, initialUnit, workspace,
 }: {
-  fullName: string; initialView: string; initialUnit: string;
+  fullName: string; initialView: string; initialUnit: string; workspace?: ReactNode;
 }) {
   const router = useRouter();
-  const view = destinations.some(([id]) => id === initialView) ? initialView : "home";
+  const view = workspace ? "flat" : destinations.some(([id]) => id === initialView) ? initialView : "home";
   const [data, setData] = useState<ResidentDashboardData | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -198,7 +203,7 @@ export default function ResidentDashboard({
       <p className={styles.subtitle}>Your home. Your community.</p>
       <nav className={styles.nav} aria-label="Resident navigation">
         {destinations.map(([id, label, path]) => <Link key={id} href={href(id)}
-          aria-current={view === id ? "page" : undefined}>
+          aria-current={view === id || (view === "flat" && id === "homes") ? "page" : undefined}>
           <svg className={styles.icon} viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
             strokeLinejoin="round" aria-hidden="true"><path d={path} /></svg>
@@ -216,7 +221,9 @@ export default function ResidentDashboard({
         {data?.homes.length ? <label>
           Your selected home
           <select className={styles.select} value={selected?.unitId ?? ""}
-            onChange={(event) => router.push(href(view, event.target.value))}>
+            onChange={(event) => router.push(view === "flat"
+              ? `/resident/flats/${event.target.value}`
+              : href(view, event.target.value))}>
             {!selected && <option value="" disabled>Choose a home</option>}
             {data.homes.map((home) => <option key={home.unitId} value={home.unitId}>
               {home.societyName} · {homeLabel(home)} · {home.relationship === "owner" ? "Owner" : "Tenant"}
@@ -229,12 +236,12 @@ export default function ResidentDashboard({
       </header>
 
       <main id="resident-main" className={styles.body}>
-        <div className={styles.actions} style={{ marginBottom: 20 }}>
+        {view !== "flat" && <div className={styles.actions} style={{ marginBottom: 20 }}>
           <Link className={styles.secondary} href="/resident/owner-transfers">
             Ownership transfer requests
           </Link>
-        </div>
-        <div className={styles.heading}>
+        </div>}
+        {view !== "flat" && <div className={styles.heading}>
           <div>
             <h1>{view === "home" ? `Hello, ${data?.preferredName || fullName.split(" ")[0]}` :
               destinations.find(([id]) => id === view)?.[1]}</h1>
@@ -247,7 +254,7 @@ export default function ResidentDashboard({
           </div>
           <button type="button" className={styles.secondary}
             onClick={() => setAttempt((value) => value + 1)}>Refresh</button>
-        </div>
+        </div>}
 
         {error && <div role="alert" className={styles.error}>
           <p>{error}</p>
@@ -260,6 +267,7 @@ export default function ResidentDashboard({
         </div>}
 
         {data && <>
+          {view === "flat" && selected && workspace}
           {initialUnit && !selected && <p role="status" className={styles.notice}>
             This home is no longer available to this account. Choose another home above.
           </p>}
@@ -371,7 +379,7 @@ export default function ResidentDashboard({
           {view === "homes" && <div className={styles.homes}>
             {data.homes.map((home) => <HomeCard key={home.unitId} home={home}
               selected={home.unitId === selected?.unitId}
-              onSelect={() => router.push(href("home", home.unitId))} />)}
+              onSelect={() => router.push(`/resident/flats/${home.unitId}`)} />)}
             {!data.homes.length && <section className={styles.card}>
               <h2>No approved homes yet</h2>
               <p className={styles.muted}>Track an existing application or connect your first flat.</p>
