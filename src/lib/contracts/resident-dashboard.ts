@@ -1,3 +1,11 @@
+export type HomeTenant = {
+  requestId: string;
+  name: string;
+  startDate: string | null;
+  endDate: string | null;
+  state: "active" | "upcoming";
+};
+
 export type ResidentHome = {
   unitId: string;
   societyId: string;
@@ -8,6 +16,9 @@ export type ResidentHome = {
   flatNumber: string;
   relationship: "owner" | "tenant";
   sourceRequestId: string;
+  occupancyBadge?: string;
+  approvedTenants?: HomeTenant[];
+  pendingTenantReviews?: { requestId: string }[];
   accessState: "active" | "upcoming";
   moveInDate: string | null;
   tenancyEndDate: string | null;

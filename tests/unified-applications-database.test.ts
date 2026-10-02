@@ -103,7 +103,22 @@ test("unified applications and upcoming tenant homes", async (t) => {
       assert.equal((await listApplicationInbox(owner,null,{})).items.some(item=>item.id===draft.id),false);
       assert.equal((await listApplicationInbox(tenant,null,{scope:"mine"})).items.some(item=>item.id===draft.id),true);
     });
+    await t.test("owner cards exclude drafts and preserve reported occupancy", async () => {
+      const home = (await loadResidentDashboard(owner, pool)).homes.find(row => row.unitId === unit);
+      assert.ok(home);
+      assert.equal(home.occupancyBadge, "VARR");
+      assert.deepEqual(home.approvedTenants, []);
+      assert.deepEqual(home.pendingTenantReviews, []);
+    });
     const pending = await submitResidentApplication(tenant, society, draft.id, draft.revision);
+    await t.test("pending tenant review is separate from occupancy", async () => {
+      const home = (await loadResidentDashboard(owner, pool)).homes.find(row => row.unitId === unit);
+      assert.ok(home);
+      assert.equal(home.occupancyBadge, "VARR");
+      assert.deepEqual(home.approvedTenants, []);
+      assert.deepEqual(home.pendingTenantReviews, [{requestId: draft.id}]);
+      assert.equal((await loadResidentDashboard(stranger, pool)).homes.length, 0);
+    });
     await t.test("one list combines owned applications and incoming tenant requests",async()=>{
       const all=await listApplicationInbox(owner,null,{});
       assert.ok(all.items.some(item=>item.id===ownerRequest && item.isOwn));
@@ -192,6 +207,21 @@ test("unified applications and upcoming tenant homes", async (t) => {
       assert.equal(occupancy.badge, "CR");
       assert.equal((await authoriseResidentDocumentRead(tenant, replacement)).accessBasis, "agreement_participant");
     });
+    await t.test("owner cards show current approved tenant; tenant receives no owner review data", async () => {
+      const home = (await loadResidentDashboard(owner, pool)).homes.find(row => row.unitId === unit);
+      assert.ok(home);
+      assert.equal(home.occupancyBadge, "CR");
+      assert.equal(home.approvedTenants?.length, 1);
+      assert.equal(home.approvedTenants?.[0].requestId, draft.id);
+      assert.equal(home.approvedTenants?.[0].name, "Tenant Flow Test");
+      assert.equal(home.approvedTenants?.[0].state, "active");
+      assert.equal(home.approvedTenants?.[0].startDate, dates.start);
+      assert.equal(home.approvedTenants?.[0].endDate, dates.end);
+      assert.deepEqual(home.pendingTenantReviews, []);
+      const tenantHome = (await loadResidentDashboard(tenant, pool)).homes.find(row => row.unitId === unit);
+      assert.deepEqual(tenantHome?.approvedTenants, []);
+      assert.deepEqual(tenantHome?.pendingTenantReviews, []);
+    });
     await t.test("approved tenant remains listed for applicant and reviewing owner",async()=>{
       assert.ok((await listApplicationInbox(tenant,null,{scope:"mine",status:"approved"})).items.some(item=>item.id===draft.id));
       assert.ok((await listApplicationInbox(owner,null,{status:"approved"})).items.some(item=>item.id===draft.id));
@@ -205,6 +235,9 @@ test("unified applications and upcoming tenant homes", async (t) => {
       assert.equal((await loadResidentDashboard(stranger,pool)).homes.length,0);
       const current=(await loadResidentDashboard(owner,pool)).homes.find(home=>home.unitId===unit);
       assert.equal(current?.accessState,"active");
+      assert.equal(current?.occupancyBadge,"UT");
+      assert.equal(current?.approvedTenants?.[0].state,"upcoming");
+      assert.equal(current?.approvedTenants?.[0].startDate,future.moveInDate);
       await pool.query(`UPDATE resident_unit_memberships SET move_in_date=(now() AT TIME ZONE 'Asia/Kolkata')::date,
         tenancy_end_date=(now() AT TIME ZONE 'Asia/Kolkata')::date WHERE source_request_id=$1`,[draft.id]);
       assert.equal((await loadResidentDashboard(tenant,pool)).homes[0]?.accessState,"active");
@@ -215,10 +248,32 @@ test("unified applications and upcoming tenant homes", async (t) => {
         revoked_by=$2,revocation_reason='Test revoked' WHERE source_request_id=$1`,[draft.id,chairman]);
       assert.equal((await loadResidentDashboard(tenant,pool)).homes.length,0);
     });
+    await t.test("revoked tenants disappear from owner cards; reported CR has no invented tenant", async () => {
+      const home = (await loadResidentDashboard(owner, pool)).homes.find(row => row.unitId === unit);
+      assert.deepEqual(home?.approvedTenants, []);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          `UPDATE society_units SET owner_occupancy_report='CR',
+             occupancy_report_membership_id=(
+               SELECT id FROM resident_unit_memberships WHERE source_request_id=$2 LIMIT 1
+             ), occupancy_reported_at=now()
+           WHERE id=$1`, [unit, ownerRequest],
+        );
+        const reported = (await loadResidentDashboard(owner, client)).homes.find(row => row.unitId === unit);
+        assert.equal(reported?.occupancyBadge, "CR");
+        assert.deepEqual(reported?.approvedTenants, []);
+      } finally {
+        try { await client.query("ROLLBACK"); }
+        finally { client.release(); }
+      }
+    });
     await t.test("a former owner loses incoming application history",async()=>{
       await pool.query(`UPDATE resident_unit_memberships SET status='revoked',revoked_at=now(),revoked_by=$2,
         revocation_reason='Test ownership ended' WHERE source_request_id=$1`,[ownerRequest,chairman]);
       assert.equal((await listApplicationInbox(owner,null,{})).items.some(item=>item.id===draft.id),false);
+      assert.equal((await loadResidentDashboard(owner,pool)).homes.some(home=>home.unitId===unit),false);
     });
   } finally {
     const cleanup = await pool.connect();

@@ -13,6 +13,7 @@ import {
   type ResidentHome,
 } from "@/lib/contracts/resident-dashboard";
 import styles from "./resident-dashboard.module.css";
+import { occupancyDisplay } from "@/lib/contracts/occupancy";
 
 const destinations = [
   ["home", "Home", "M3 10 12 3l9 7M5 9v12h5v-7h4v7h5V9"],
@@ -25,6 +26,92 @@ const labels: Record<string, string> = {
   draft: "Draft", pending: "Awaiting review", changes_requested: "Changes requested",
   approved: "Approved", rejected: "Rejected", withdrawn: "Withdrawn",
 };
+
+function leaseDate(value: string | null) {
+  if (!value) return "Not provided";
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "Not provided";
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric", month: "short", year: "numeric", timeZone: "UTC",
+  }).format(date);
+}
+
+function OwnerFlatStatus({ home }: { home: ResidentHome }) {
+  if (home.relationship !== "owner") return null;
+  const occupancy = occupancyDisplay(home.occupancyBadge, "unknown");
+  const tenants = home.approvedTenants ?? [];
+  const reviews = home.pendingTenantReviews ?? [];
+  const explanations: Record<string, string> = {
+    OO: "An approved owner is recorded as living here.",
+    VARR: "Reported vacant and ready to rent.",
+    VNRR: "Reported vacant and not ready to rent.",
+    UM: "Reported under maintenance.",
+    FO: "Reported occupied by family.",
+    V: "Reported vacant; rental readiness has not been provided.",
+    UNK: "Occupancy has not been reported.",
+  };
+
+  return <section aria-label="Flat occupancy"
+    className="my-4 rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-900">
+    <span className={`inline-flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2 font-semibold ${occupancy.tone}`}>
+      <span>{occupancy.code}</span>
+      <span aria-hidden="true">·</span>
+      <span>{occupancy.label}</span>
+    </span>
+
+    {explanations[occupancy.code] && (
+      <p className="mt-3 leading-6">{explanations[occupancy.code]}</p>
+    )}
+
+    {occupancy.code === "CR" && !tenants.some(tenant => tenant.state === "active") && (
+      <p className="mt-3 leading-6">
+        Reported rented · No current approved tenant linked.
+      </p>
+    )}
+
+    {tenants.length > 0 && <ul className="mt-4 grid list-none gap-4 p-0">
+      {tenants.map(tenant => <li key={tenant.requestId}
+        className="rounded-lg border border-slate-200 p-3">
+        <p className="text-xs font-semibold text-slate-600">
+          {tenant.state === "upcoming" ? "Approved upcoming tenant" : "Current approved tenant"}
+        </p>
+        <p className="mt-2 break-words font-semibold">{tenant.name}</p>
+        <dl className="mt-3 grid grid-cols-2 gap-4">
+          <div>
+            <dt className="text-xs text-slate-600">Lease start</dt>
+            <dd className="mt-1 font-medium">{leaseDate(tenant.startDate)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-slate-600">Lease end</dt>
+            <dd className="mt-1 font-medium">{leaseDate(tenant.endDate)}</dd>
+          </div>
+        </dl>
+        <Link href={`/resident/applications?application=${tenant.requestId}`}
+          className="mt-3 inline-flex min-h-11 items-center font-semibold text-emerald-800 underline underline-offset-4">
+          View tenant application
+        </Link>
+      </li>)}
+    </ul>}
+
+    {reviews.length > 0 && <div className="mt-4 border-t border-slate-200 pt-4">
+      <p className="font-semibold">
+        {reviews.length} tenant application{reviews.length === 1 ? "" : "s"} awaiting your review
+      </p>
+      <p className="mt-2 text-xs leading-5 text-slate-600">
+        Pending applications do not change occupancy.
+      </p>
+      <div className="mt-2 flex flex-wrap gap-3">
+        {reviews.map((review, index) => (
+          <Link key={review.requestId}
+            href={`/resident/applications?application=${review.requestId}`}
+            className="inline-flex min-h-11 items-center font-semibold text-emerald-800 underline underline-offset-4">
+            Review application{reviews.length > 1 ? ` ${index + 1}` : ""}
+          </Link>
+        ))}
+      </div>
+    </div>}
+  </section>;
+}
 
 function HomeCard({ home, selected, onSelect }: {
   home: ResidentHome; selected: boolean; onSelect: () => void;
@@ -43,6 +130,7 @@ function HomeCard({ home, selected, onSelect }: {
       <div><dt>Floor</dt><dd>{home.floor || "—"}</dd></div>
       <div><dt>Flat</dt><dd>{home.flatNumber}</dd></div>
     </dl>
+    <OwnerFlatStatus home={home} />
     <div className={styles.actions}>
       <button type="button" className={styles.primary} onClick={onSelect}>
         {home.accessState === "upcoming" ? "View upcoming home" : "Open home"}
@@ -224,6 +312,7 @@ export default function ResidentDashboard({
                     <div><dt>Floor</dt><dd>{selected.floor || "—"}</dd></div>
                     <div><dt>Flat</dt><dd>{selected.flatNumber}</dd></div>
                   </dl>
+                  <OwnerFlatStatus home={selected} />
                   <Link className={styles.secondary} href={`/resident/flats/${selected.unitId}`}>
                     View home details →
                   </Link>
