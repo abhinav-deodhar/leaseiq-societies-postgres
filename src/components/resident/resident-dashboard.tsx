@@ -189,12 +189,34 @@ export default function ResidentDashboard({
             <div className={styles.grid}>
               <div>
                 {selected ? <section className={`${styles.card} ${styles.hero}`}>
-                  <span className={styles.badge}>
-                    Approved {selected.relationship}
-                  </span>
-                  {selected.accessState === "upcoming" && <p className={styles.notice}>
-                    Your tenancy is approved. Access starts on {selected.moveInDate}.
-                  </p>}
+                  <div className={styles.leaseHeader}>
+                    <div className={styles.leaseStatus}>
+                      <span className={styles.badge}>
+                        Approved {selected.relationship}
+                      </span>
+                      {selected.accessState === "upcoming" && (
+                        <span className={styles.leaseUpcoming}>
+                          Upcoming tenancy · access begins on the start date
+                        </span>
+                      )}
+                    </div>
+                    {selected.relationship === "tenant" && (
+                      <dl className={styles.leaseDates} aria-label="Lease dates">
+                        <div>
+                          <dt>Lease start</dt>
+                          <dd>{selected.moveInDate
+                            ? <time dateTime={selected.moveInDate}>{selected.moveInDate}</time>
+                            : "Not provided"}</dd>
+                        </div>
+                        <div>
+                          <dt>Lease end</dt>
+                          <dd>{selected.tenancyEndDate
+                            ? <time dateTime={selected.tenancyEndDate}>{selected.tenancyEndDate}</time>
+                            : "Not provided"}</dd>
+                        </div>
+                      </dl>
+                    )}
+                  </div>
                   <h2>{selected.societyName}</h2>
                   <p className={styles.muted}>{selected.city}</p>
                   <dl className={styles.facts}>

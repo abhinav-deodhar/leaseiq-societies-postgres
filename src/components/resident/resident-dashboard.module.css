@@ -107,3 +107,74 @@
   .stat .muted { font-size: 12px; }
   .card { padding: 20px; }
 }
+
+/* Lease dates in the selected home's header. */
+.leaseHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.leaseStatus {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  flex: 1 1 180px;
+}
+
+.leaseUpcoming {
+  color: #fef3c7;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  max-width: 28ch;
+}
+
+.leaseDates {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin: 0 0 0 auto;
+  padding: 16px 20px;
+  border: 1px solid rgb(255 255 255 / 28%);
+  border-radius: 14px;
+  background: rgb(255 255 255 / 8%);
+}
+
+.leaseDates dt {
+  margin: 0 0 8px;
+  color: #d1fae5;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.leaseDates dd {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .leaseHeader {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .leaseStatus {
+    flex: none;
+  }
+
+  .leaseDates {
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 16px;
+    gap: 16px;
+  }
+}
