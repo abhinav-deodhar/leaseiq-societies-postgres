@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { test } from "node:test";
 import { getDatabase } from "../src/lib/server/db";
 import { ownerOccupancy } from "../src/lib/server/services/owner-occupancy.service";
+import { listUnits } from "../src/lib/server/repositories/units.repository";
 
 test("owner occupancy respects current tenancy locks", async (t) => {
   assert.notEqual(process.env.NODE_ENV, "production");
@@ -169,6 +170,52 @@ test("owner occupancy respects current tenancy locks", async (t) => {
   }
 
   try {
+    await t.test("future approved tenancy shows UT and its date; unapproved requests do not", async () => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          `UPDATE resident_unit_memberships
+           SET move_in_date=(statement_timestamp() AT TIME ZONE 'Asia/Kolkata')::date+7,
+               tenancy_end_date=(statement_timestamp() AT TIME ZONE 'Asia/Kolkata')::date+30
+           WHERE id=$1`, [tenantMembership],
+        );
+        const upcoming = (await listUnits(client, society, {page: 1, search: ""}, 20)).units[0];
+        assert.equal(upcoming.occupancyBadge, "UT");
+        assert.match(upcoming.upcomingTenancyStart ?? "", /^\d{4}-\d{2}-\d{2}$/);
+
+        await client.query(
+          `UPDATE resident_unit_requests
+           SET status='withdrawn',reviewed_at=NULL,reviewed_by=NULL,review_note=NULL
+           WHERE id=$1`, [tenantRequest],
+        );
+        const withdrawn = (await listUnits(client, society, {page: 1, search: ""}, 20)).units[0];
+        assert.equal(withdrawn.occupancyBadge, "VARR");
+        assert.equal(withdrawn.upcomingTenancyStart, null);
+      } finally {
+        try { await client.query("ROLLBACK"); }
+        finally { client.release(); }
+      }
+    });
+
+    await t.test("lease starting today shows CR in the register", async () => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          `UPDATE resident_unit_memberships
+           SET move_in_date=(statement_timestamp() AT TIME ZONE 'Asia/Kolkata')::date
+           WHERE id=$1`, [tenantMembership],
+        );
+        const current = (await listUnits(client, society, {page: 1, search: ""}, 20)).units[0];
+        assert.equal(current.occupancyBadge, "CR");
+        assert.equal(current.upcomingTenancyStart, null);
+      } finally {
+        try { await client.query("ROLLBACK"); }
+        finally { client.release(); }
+      }
+    });
+
     await t.test("agreement ending today locks every status, including CR", async () => {
       const current = await read();
       assert.equal(current.occupancyLocked, true);

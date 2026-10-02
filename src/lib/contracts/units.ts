@@ -75,6 +75,7 @@ export type UnitSummary = {
   unitTypeName: string | null;
   occupancyStatus: "unknown" | "vacant" | "owner_occupied" | "rented";
   occupancyBadge?: string;
+  upcomingTenancyStart?: string | null;
   revision: number;
   createdAt: string;
 };

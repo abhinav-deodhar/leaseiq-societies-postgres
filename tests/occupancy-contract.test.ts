@@ -8,6 +8,8 @@ test("occupancy labels distinguish rental readiness from tenant approval", () =>
     assert.equal(awayOccupancySchema.safeParse(code).success, true);
     assert.equal(occupancyDisplay(code, "unknown").code, code);
   }
+  assert.equal(awayOccupancySchema.safeParse("UT").success, false);
+  assert.equal(occupancyDisplay("UT", "unknown").label, "Upcoming tenancy");
   assert.equal(awayOccupancySchema.safeParse("OO").success, false);
   assert.equal(occupancyDisplay(undefined, "rented").code, "CR");
   assert.equal(occupancyDisplay(undefined, "vacant").code, "V");

@@ -267,7 +267,7 @@ export default function UnitRegister({
           {Object.entries(occupancyLegend).map(([code, info]) => <span key={code}
             className={`rounded-lg border px-3 py-2 text-sm ${info.tone}`}><strong>{code}</strong> — {info.label}</span>)}
         </div>
-        <p className="mt-3 text-xs text-slate-600">Owner reports describe use of the flat. CR does not by itself confirm tenant registration. Existing unknown records remain UNK until reported.</p>
+        <p className="mt-3 text-xs text-slate-600">UT means an approved tenancy starts later; its start date appears below the badge. Current approved tenancies show CR. Owner-reported CR alone does not confirm tenant registration. Refresh the register to update date-based labels.</p>
       </section>
       <UnitImport
         societyId={societyId}
@@ -445,6 +445,16 @@ export default function UnitRegister({
                             {occupancyDisplay(unit.occupancyBadge, unit.occupancyStatus).code}
                           </span>
                         </span>
+                        {unit.occupancyBadge === "UT" && unit.upcomingTenancyStart && (
+                          <p className="mt-2 whitespace-nowrap text-xs text-slate-600">
+                            Starts <time dateTime={unit.upcomingTenancyStart}>
+                              {new Intl.DateTimeFormat("en-GB", {
+                                day: "numeric", month: "short", year: "numeric",
+                                timeZone: "UTC",
+                              }).format(new Date(`${unit.upcomingTenancyStart}T00:00:00Z`))}
+                            </time>
+                          </p>
+                        )}
                       </td>
                       <td className="px-4 py-4 text-right">
                         <button

@@ -30,6 +30,24 @@ export const effectiveUnitOccupancySql = `
   END
 `;
 
+// Earliest approved future tenancy. This is display information only.
+export const upcomingUnitTenancyStartSql = `
+  (SELECT MIN(m.move_in_date)::text
+   FROM resident_unit_memberships m
+   JOIN resident_unit_requests r
+     ON r.id=m.source_request_id
+    AND r.society_id=m.society_id
+    AND r.unit_id=m.unit_id
+    AND r.user_id=m.user_id
+    AND r.relationship=m.relationship
+   WHERE m.unit_id=u.id AND m.society_id=u.society_id
+     AND m.relationship='tenant' AND m.status='active'
+     AND r.status='approved' AND r.owner_review_status='approved'
+     AND m.move_in_date >
+       (statement_timestamp() AT TIME ZONE 'Asia/Kolkata')::date
+     AND (m.tenancy_end_date IS NULL OR m.tenancy_end_date >= m.move_in_date))
+`;
+
 // Detailed labels do not change ownership or grant resident access.
 // Resolve explicit reports only while their exact owner membership is active.
 export const effectiveUnitOccupancyBadgeSql = `
@@ -47,6 +65,7 @@ export const effectiveUnitOccupancyBadgeSql = `
         AND (tenant_member.move_in_date IS NULL OR tenant_member.move_in_date <= (statement_timestamp() AT TIME ZONE 'Asia/Kolkata')::date)
         AND (tenant_member.tenancy_end_date IS NULL OR tenant_member.tenancy_end_date >= (statement_timestamp() AT TIME ZONE 'Asia/Kolkata')::date)
     ) THEN 'CR'
+    WHEN (${upcomingUnitTenancyStartSql}) IS NOT NULL THEN 'UT'
     WHEN (${effectiveUnitOccupancySql}) = 'owner_occupied' THEN 'OO'
     ELSE COALESCE(
       (SELECT u.owner_occupancy_report FROM resident_unit_memberships reporter

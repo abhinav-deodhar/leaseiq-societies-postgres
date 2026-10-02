@@ -4,6 +4,7 @@ export const awayOccupancySchema = z.enum(["VARR", "VNRR", "UM", "CR", "FO"]);
 export type AwayOccupancy = z.infer<typeof awayOccupancySchema>;
 
 export const occupancyLabels = {
+  UT: { label: "Upcoming tenancy", tone: "border-indigo-200 bg-indigo-50 text-indigo-900" },
   OO: { label: "Owner occupied", tone: "border-emerald-200 bg-emerald-50 text-emerald-900" },
   VARR: { label: "Vacant and ready to rent", tone: "border-blue-200 bg-blue-50 text-blue-900" },
   VNRR: { label: "Vacant and not ready to rent", tone: "border-amber-200 bg-amber-50 text-amber-900" },
