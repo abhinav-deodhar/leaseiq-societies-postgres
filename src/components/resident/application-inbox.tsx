@@ -3,7 +3,6 @@
 import DeleteDraft from "./delete-draft";
 import Link from "next/link";
 import ApplicationAttachments from "./application-attachments";
-import TenantReviewInbox from "./tenant-review-inbox";
 import { occupancyDisplay } from "@/lib/contracts/occupancy";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -38,6 +37,15 @@ function ApplicationCard({
   const [note, setNote] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   const owners = item.currentOwners ?? [];
+  const incoming = !chairman && !item.isOwn && item.relationship === "tenant";
+  const tenantReview = item.relationship === "tenant" && (chairman || incoming);
+  const canReview = !item.isOwn && item.status === "pending" &&
+    (chairman ? item.relationship === "owner" || item.ownerReviewStatus === "approved"
+      : incoming && item.ownerReviewStatus === "pending");
+  const typeLabel = incoming ? "Tenant verification request"
+    : item.relationship === "owner" ? "Owner application" : "Tenant application";
+  const typeTone = incoming ? "bg-purple-50 text-purple-900" : item.relationship === "owner"
+    ? "bg-teal-50 text-teal-900" : "bg-blue-50 text-blue-900";
   const ownershipConflict = chairman && item.relationship === "owner" &&
     item.status === "pending" && owners.length > 0;
   const associationLabel = item.associationStatus === "active"
@@ -59,10 +67,11 @@ function ApplicationCard({
     : "bg-slate-100 text-slate-700";
 
   return <details open={initiallyOpen || undefined}
-    className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    className="lq-form w-full max-w-none rounded-xl border border-slate-200 bg-white shadow-sm">
     <summary className="cursor-pointer rounded-xl p-5 focus-visible:outline-2 focus-visible:outline-emerald-700">
       <span className="ml-2 inline-flex flex-wrap items-center gap-3">
-        <span className="font-semibold">{chairman ? name : item.societyName}</span>
+        <span className="font-semibold">{chairman || incoming ? name : item.societyName}</span>
+        <span className={`rounded-full px-3 py-1 text-sm font-semibold ${typeTone}`}>{typeLabel}</span>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tone}`}>
           {chairman && item.status === "pending"
             ? "Pending review" : item.relationship === "tenant" && item.status === "pending"
@@ -87,10 +96,10 @@ function ApplicationCard({
         className="ml-6 mt-2 inline-flex rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
         Existing owner · approval blocked
       </span>}
-      <span className="mt-2 block pl-6 text-xs text-slate-500">
+      {item.submittedAt && <span className="mt-2 block pl-6 text-xs text-slate-500">
         Submitted: {date(item.submittedAt)}
         {item.resubmissionCount > 0 ? ` · Resubmitted ${item.resubmissionCount} time(s)` : ""}
-      </span>
+      </span>}
     </summary>
 
     <div className="space-y-6 border-t border-slate-100 p-5 sm:p-6">
@@ -100,8 +109,9 @@ function ApplicationCard({
           ["Society", item.societyName],
           ["Email", item.email],
           ["Mobile", item.phone],
-          ["Submitted", date(item.submittedAt)],
-          ["Decision date", date(item.reviewedAt)],
+          ...(item.ownerReviewedAt ? [["Owner reviewed",date(item.ownerReviewedAt)]] : []),
+          ...(item.reviewedAt ? [["Latest decision",date(item.reviewedAt)]] : []),
+          ...(item.relationship === "tenant" ? [["Agreement end",item.tenancyEndDate ?? "Not provided"]] : []),
           ["Lives in this flat", profile ? (profile.residesInFlat ? "Yes" : "No") : "Not provided"],
           ["Move-in date", item.moveInDate ?? "Not provided"],
           ...(item.relationship === "owner" && profile && !profile.residesInFlat
@@ -135,7 +145,18 @@ function ApplicationCard({
         </ul>
       </section>}
 
-      {(!chairman || ["pending", "approved"].includes(item.status)) &&
+      {incoming && <section className="space-y-4 border-t border-slate-200 pt-6">
+        <h3 className="font-semibold">Supporting documents</h3>
+        <p className="text-sm text-slate-600">Checked files have passed upload checks. Review their contents before deciding.</p>
+        {item.reviewDocuments?.length ? <ul className="divide-y divide-slate-200">
+          {item.reviewDocuments.map(doc=><li key={doc.id} className="flex flex-wrap items-center justify-between gap-4 py-4">
+            <div className="min-w-0"><p className="break-all font-medium">{doc.name}</p>
+              <p className="mt-1 text-sm text-slate-600">{doc.kind === "identity" ? "Identity document" : `Rental agreement · Version ${doc.version}`} · {(doc.size/1048576).toFixed(1)} MB · Checked</p></div>
+            <a className="lq-button lq-secondary" href={`/api/application-documents/${doc.id}`}>Download<span className="sr-only"> {doc.name}</span></a>
+          </li>)}
+        </ul> : <p className="text-sm text-slate-600">Documents are not available for this review stage.</p>}
+      </section>}
+      {!incoming && (!chairman || ["pending", "approved"].includes(item.status)) &&
         <ApplicationAttachments requestId={item.id} relationship={item.relationship}
           chairman={chairman}
           editable={!chairman && item.isOwn &&
@@ -150,6 +171,9 @@ function ApplicationCard({
         <p className="mt-1 whitespace-pre-wrap text-slate-600">{item.applicantNote}</p>
       </section>}
 
+      {item.ownerReviewNote && <section className="rounded-lg bg-slate-50 p-4 text-sm">
+        <h3 className="font-semibold">Owner feedback</h3><p className="mt-2 whitespace-pre-wrap">{item.ownerReviewNote}</p>
+      </section>}
       {item.reviewNote && <section className="rounded-lg border border-slate-200 p-4 text-sm">
         <h3 className="font-semibold">
           {item.status === "changes_requested" ? "Corrections requested"
@@ -158,7 +182,7 @@ function ApplicationCard({
         <p className="mt-2 whitespace-pre-wrap">{item.reviewNote}</p>
       </section>}
 
-      {!chairman && item.status === "pending" && <p role="status"
+      {!chairman && item.isOwn && item.status === "pending" && <p role="status"
         className="rounded-lg bg-amber-50 p-4 text-sm text-amber-900">
         {item.relationship === "tenant" && item.ownerReviewStatus !== "approved"
           ? "Your application has been submitted to the registered owner for verification. Chairman review follows owner approval."
@@ -178,7 +202,7 @@ function ApplicationCard({
         </p>
       </section>}
 
-      {chairman && <section
+      {chairman && item.relationship === "owner" && <section
         className={`rounded-lg border p-4 text-sm ${
           ownershipConflict || owners.length > 1
             ? "border-amber-200 bg-amber-50 text-amber-950"
@@ -200,7 +224,7 @@ function ApplicationCard({
           co-ownership or an incorrect approval. No existing record has been changed.
         </p>}
       </section>}
-      {!chairman && ["draft", "changes_requested"].includes(item.status) && <section
+      {!chairman && item.isOwn && ["draft", "changes_requested"].includes(item.status) && <section
         className="space-y-4 rounded-lg bg-slate-50 p-4">
         <p className="text-sm text-slate-600">
           {item.status === "changes_requested"
@@ -230,10 +254,10 @@ function ApplicationCard({
         {item.status === "draft" && <DeleteDraft societyId={item.societyId} requestId={item.id} revision={item.revision} onDeleted={onDeleted} />}
       </section>}
 
-      {chairman && item.status === "pending" && (
+      {(canReview || (chairman && item.isOwn && item.status === "pending")) && (
         item.isOwn ? <p className="rounded-lg bg-amber-50 p-4 text-sm">
-          You cannot approve or reject your own owner application.
-        </p> : <form className="space-y-4 rounded-lg bg-slate-50 p-4"
+          You cannot approve or reject your own application.
+        </p> : <form className="space-y-6 border-t border-slate-200 pt-6"
           onSubmit={(event) => {
             event.preventDefault();
             if (decision && !(decision === "approved" && ownershipConflict)) {
@@ -241,8 +265,10 @@ function ApplicationCard({
             }
           }}>
           <p className="text-sm text-slate-600">
-            Verify ownership against your society records before approving.
-            Approval links this applicant to the flat; it does not create family login accounts.
+            {tenantReview ? chairman
+              ? "The owner has verified this application. Approval confirms the tenancy; access follows its dates."
+              : "Review the tenant details and latest rental agreement. Verification sends the application to the chairman."
+              : "Verify ownership against society records before approving. Approval links this applicant to the flat."}
           </p>
           <label className="block text-sm font-medium">
             Decision
@@ -251,7 +277,7 @@ function ApplicationCard({
               className="mt-2 block min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 sm:max-w-sm">
               <option value="">Choose a decision</option>
               <option value="approved" disabled={ownershipConflict}>
-                {ownershipConflict ? "Approval blocked — existing owner" : "Approve owner application"}
+                {ownershipConflict ? "Approval blocked — existing owner" : tenantReview ? chairman ? "Approve tenant application" : "Verify and send to chairman" : "Approve owner application"}
               </option>
               <option value="changes_requested">Request changes</option>
               <option value="rejected">Reject application</option>
@@ -305,6 +331,8 @@ export default function ApplicationInbox({
   const [application, setApplication] = useState(initialApplication);
   const [status, setStatus] = useState(chairman && !initialApplication ? "pending" : "all");
   const [page, setPage] = useState(1);
+  const [scope,setScope]=useState("all");
+  const [stage,setStage]=useState("all");
   const [reload, setReload] = useState(0);
   const [data, setData] = useState<{ items: InboxApplication[]; hasMore: boolean; counts: Record<string, number> } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -316,7 +344,7 @@ export default function ApplicationInbox({
 
   useEffect(() => {
     const controller = new AbortController();
-    const query = new URLSearchParams({ status, page: String(page) });
+    const query = new URLSearchParams({ status, scope, stage, page: String(page) });
     if (application) query.set("application", application);
     fetch(`${endpoint}?${query}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -335,7 +363,7 @@ export default function ApplicationInbox({
         }
       });
     return () => controller.abort();
-  }, [endpoint, application, status, page, reload]);
+  }, [endpoint, application, status, scope, stage, page, reload]);
 
   function refresh() {
     setLoading(true);
@@ -352,10 +380,17 @@ export default function ApplicationInbox({
     setError("");
     setNotice("");
     try {
-      const response = await fetch(endpoint, {
+      const tenantReview = !!decision && item.relationship === "tenant" && !item.isOwn;
+      const actionEndpoint = tenantReview ? chairman
+        ? `/api/chairman/societies/${item.societyId}/tenant-applications`
+        : "/api/resident/tenant-reviews" : endpoint;
+      const response = await fetch(actionEndpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(chairman ? {
+        body: JSON.stringify(tenantReview ? {
+          societyId:item.societyId,requestId:item.id,
+          review:{expectedRevision:item.revision,decision,reviewNote:note?.trim() || null},
+        } : chairman ? {
           requestId: item.id,
           review: {
             expectedRevision: item.revision, decision, reviewNote: note?.trim() || null,
@@ -367,7 +402,10 @@ export default function ApplicationInbox({
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.message ?? "The action could not be confirmed.");
-      setNotice(chairman
+      setNotice(tenantReview
+        ? decision === "approved" ? chairman ? "Tenant application approved." : "Verified. Awaiting chairman review."
+          : decision === "changes_requested" ? "Corrections requested." : "Application rejected."
+        : chairman
         ? (decision === "changes_requested"
             ? "Changes requested. The resident can now correct and resubmit this application."
             : `Application ${decision === "approved" ? "approved" : "rejected"}. The resident can see the decision.`)
@@ -382,7 +420,7 @@ export default function ApplicationInbox({
       setLoading(true);
       setReload((value) => value + 1);
       feedback.current?.focus();
-      feedback.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      feedback.current?.scrollIntoView({ block: "start" });
     }
   }
 
@@ -391,7 +429,18 @@ export default function ApplicationInbox({
     : ["all", "draft", "pending", "changes_requested", "approved", "rejected", "withdrawn"];
 
   return <section className="mt-7 space-y-5">
-    <TenantReviewInbox societyId={societyId} />
+    {!chairman && <div aria-label="Application scope" className="flex flex-wrap gap-3">
+      {[["all","All applications"],["mine","My applications"],["review","Needs my review"]].map(([value,label]) =>
+        <button key={value} type="button" disabled={busy} aria-pressed={scope===value}
+          className={`lq-button ${scope===value?"lq-primary":"lq-secondary"}`}
+          onClick={()=>{setScope(value);setStatus("all");setStage("all");setPage(1);setApplication("");setLoading(true);setError("");}}>{label}</button>)}
+    </div>}
+    {!chairman && <label className="block max-w-sm text-sm font-medium">Review stage
+      <select className="lq-field" value={stage} disabled={busy} onChange={event=>{
+        setStage(event.target.value);setStatus("all");setApplication("");setPage(1);setLoading(true);setError("");
+      }}><option value="all">All stages</option><option value="owner">Awaiting owner verification</option>
+        <option value="chairman">Awaiting chairman review</option></select>
+    </label>}
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div aria-label="Filter applications by status"
         className="flex max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
@@ -429,7 +478,7 @@ export default function ApplicationInbox({
         {!data.items.length && <div className="rounded-xl border border-slate-200 bg-white p-8">
           <h2 className="text-lg font-semibold">No applications here yet</h2>
           <p className="mt-2 text-sm text-slate-600">
-            {chairman ? "Submitted owner applications for your society will appear here."
+            {chairman ? "Applications ready for your society’s review will appear here."
               : "Save your application, then submit it for review. Try All applications to find an existing record."}
           </p>
         </div>}

@@ -20,6 +20,10 @@ export type InboxApplication = {
   applicantProfile: ResidentProfile | null;
   applicantNote: string | null;
   moveInDate: string | null;
+  tenancyEndDate?: string | null;
+  ownerReviewedAt?: string | null;
+  ownerReviewNote?: string | null;
+  reviewDocuments?: Array<{id:string;name:string;kind:string;size:number;version:number|null}>;
   submittedAt: string | null;
   reviewedAt: string | null;
   reviewNote: string | null;

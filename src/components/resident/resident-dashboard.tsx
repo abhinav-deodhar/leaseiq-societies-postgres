@@ -33,6 +33,9 @@ function HomeCard({ home, selected, onSelect }: {
     <span className={styles.badge}>
       {home.relationship === "owner" ? "Owner" : "Tenant"}{selected ? " · Selected" : ""}
     </span>
+    {home.accessState === "upcoming" && <p className={styles.notice}>
+      Approved · Upcoming tenancy · Starts {home.moveInDate}
+    </p>}
     <h2 style={{ marginTop: 16 }}>{home.societyName}</h2>
     <p className={styles.muted}>{home.city}</p>
     <dl className={styles.facts}>
@@ -42,7 +45,7 @@ function HomeCard({ home, selected, onSelect }: {
     </dl>
     <div className={styles.actions}>
       <button type="button" className={styles.primary} onClick={onSelect}>
-        Open home
+        {home.accessState === "upcoming" ? "View upcoming home" : "Open home"}
       </button>
       <Link className={styles.secondary}
         href={`/resident/applications?application=${home.sourceRequestId}`}>
@@ -189,6 +192,9 @@ export default function ResidentDashboard({
                   <span className={styles.badge}>
                     Approved {selected.relationship}
                   </span>
+                  {selected.accessState === "upcoming" && <p className={styles.notice}>
+                    Your tenancy is approved. Access starts on {selected.moveInDate}.
+                  </p>}
                   <h2>{selected.societyName}</h2>
                   <p className={styles.muted}>{selected.city}</p>
                   <dl className={styles.facts}>
@@ -265,7 +271,7 @@ export default function ResidentDashboard({
             </section>}
           </div>}
 
-          {view === "applications" && <ApplicationInbox />}
+          {view === "applications" && <ApplicationInbox key={attempt} />}
 
           {view === "account" && <div className={styles.grid}>
             <PersonalDetailsCard onSaved={() => setAttempt(value => value + 1)} />

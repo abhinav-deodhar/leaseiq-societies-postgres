@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { z } from "zod";
 import { requirePortalSession } from "@/lib/server/auth/require-portal-session";
-import { getDatabase } from "@/lib/server/db";
+import { loadResidentDashboard } from "@/lib/server/services/resident-dashboard.service";
 
 export default async function ResidentFlatPage({
   params,
@@ -13,26 +13,8 @@ export default async function ResidentFlatPage({
   const { unitId } = await params;
   if (!z.uuid().safeParse(unitId).success) notFound();
 
-  const result = await getDatabase().query<{
-    societyName: string;
-    city: string;
-    wing: string;
-    floor: string | null;
-    flatNumber: string;
-    relationship: "owner" | "tenant";
-    sourceRequestId: string;
-  }>(
-    `SELECT s.name AS "societyName", s.city,
-            u.wing, u.floor_label AS floor, u.flat_number AS "flatNumber",
-            m.relationship, m.source_request_id AS "sourceRequestId"
-     FROM resident_unit_memberships m
-     JOIN society_units u ON u.id = m.unit_id AND u.society_id = m.society_id
-     JOIN societies s ON s.id = m.society_id
-     WHERE m.user_id = $1 AND m.unit_id = $2 AND m.status = 'active'
-     LIMIT 1`,
-    [session.userId, unitId],
-  );
-  const flat = result.rows[0];
+  const dashboard = await loadResidentDashboard(session.userId);
+  const flat = dashboard.homes.find(home => home.unitId === unitId);
   if (!flat) notFound();
 
   return <main className="min-h-screen bg-[#f3f6f4] px-5 py-8 text-slate-900 sm:px-8">
@@ -48,6 +30,9 @@ export default async function ResidentFlatPage({
         <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-900">
           Registered {flat.relationship}
         </span>
+        {flat.accessState === "upcoming" && <p className="mt-5 rounded-lg bg-amber-50 p-4 text-amber-950">
+          Approved · Upcoming tenancy. Access starts on {flat.moveInDate}.
+        </p>}
         <dl className="mt-6 grid grid-cols-2 gap-6 sm:grid-cols-3">
           {[
             ["Wing", flat.wing || "No wing"],

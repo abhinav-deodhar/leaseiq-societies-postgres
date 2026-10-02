@@ -17,7 +17,10 @@ export async function loadResidentDashboard(
             s.name AS "societyName", s.city,
             u.wing, u.floor_label AS floor,
             u.flat_number AS "flatNumber",
-            m.relationship, m.source_request_id AS "sourceRequestId"
+            m.relationship, m.source_request_id AS "sourceRequestId",
+            m.move_in_date::text AS "moveInDate", m.tenancy_end_date::text AS "tenancyEndDate",
+            CASE WHEN m.relationship='tenant' AND m.move_in_date >
+              (now() AT TIME ZONE 'Asia/Kolkata')::date THEN 'upcoming' ELSE 'active' END AS "accessState"
      FROM resident_unit_memberships m
      JOIN resident_unit_requests r
        ON r.id = m.source_request_id
@@ -36,9 +39,7 @@ export async function loadResidentDashboard(
        AND (
          m.relationship = 'owner'
          OR (
-           (m.move_in_date IS NULL OR
-             m.move_in_date <= (now() AT TIME ZONE 'Asia/Kolkata')::date)
-           AND (m.tenancy_end_date IS NULL OR
+           (m.tenancy_end_date IS NULL OR
              m.tenancy_end_date >= (now() AT TIME ZONE 'Asia/Kolkata')::date)
          )
        )

@@ -59,7 +59,8 @@ async function documentsAndDates(client: PoolClient, request: TenantRequest) {
   if (!profile.success || !profile.data.profile.residesInFlat) {
     throw new HttpError(400, "Complete and save your tenant details before submitting.");
   }
-  if (!request.move_in_date || !request.tenancy_id) throw new HttpError(400, "Save your move-in date and upload a rental agreement first.");
+  if (!request.move_in_date) throw new HttpError(400, "Save your move-in date before submitting.");
+  if (!request.tenancy_id) throw new HttpError(400, "Upload a rental agreement with Rental agreement selected as its document purpose.");
   const tenancy = await client.query(
     `SELECT id FROM resident_tenancies WHERE id=$1 AND society_id=$2 AND unit_id=$3
      AND created_by=$4 AND status='draft' AND starts_on=$5::date

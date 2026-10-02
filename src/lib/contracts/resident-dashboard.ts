@@ -8,6 +8,9 @@ export type ResidentHome = {
   flatNumber: string;
   relationship: "owner" | "tenant";
   sourceRequestId: string;
+  accessState: "active" | "upcoming";
+  moveInDate: string | null;
+  tenancyEndDate: string | null;
 };
 
 export type ResidentDashboardApplication = {

@@ -25,7 +25,11 @@ export async function GET(request: NextRequest) {
   try {
     const session = await authenticate(request);
     return jsonNoStore(await listApplicationInbox(
-      session.userId, null, applicationInboxFilters(request.nextUrl.searchParams),
+      session.userId, null, {
+        ...applicationInboxFilters(request.nextUrl.searchParams),
+        scope: request.nextUrl.searchParams.get("scope") ?? "all",
+        stage: request.nextUrl.searchParams.get("stage") ?? "all",
+      },
     ));
   } catch (error) { return applicationInboxFailure(error); }
 }

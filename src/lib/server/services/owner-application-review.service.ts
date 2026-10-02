@@ -14,6 +14,8 @@ const filtersSchema = z.strictObject({
     "all", "draft", "pending", "changes_requested", "approved", "rejected", "withdrawn",
   ]).default("all"),
   application: z.uuid().optional(),
+  scope: z.enum(["all", "mine", "review"]).default("all"),
+  stage: z.enum(["all", "owner", "chairman"]).default("all"),
 });
 
 function uuid(value: string) {
@@ -57,6 +59,37 @@ export async function listApplicationInbox(
   if (!parsed.success) throw new HttpError(400, "Invalid application filters.");
   const filters = parsed.data;
 
+  const incoming = `(
+    r.relationship='tenant' AND r.user_id<>$1 AND r.submitted_at IS NOT NULL
+    AND r.status IN ('pending','changes_requested','approved','rejected')
+    AND EXISTS(SELECT 1 FROM resident_unit_memberships own
+      JOIN resident_unit_requests source ON source.id=own.source_request_id
+        AND source.society_id=own.society_id AND source.unit_id=own.unit_id
+        AND source.user_id=own.user_id AND source.relationship='owner' AND source.status='approved'
+      JOIN users actor ON actor.id=own.user_id
+      WHERE own.user_id=$1 AND own.society_id=r.society_id AND own.unit_id=r.unit_id
+        AND own.status='active' AND own.relationship='owner' AND actor.status='active'
+        AND actor.email_verified_at IS NOT NULL
+        AND (actor.phone_verified_at IS NOT NULL OR actor.verification_policy='email_only')
+        AND NOT EXISTS(SELECT 1 FROM platform_admins pa WHERE pa.user_id=actor.id))
+    AND EXISTS(SELECT 1 FROM societies s JOIN society_applications sa ON sa.society_id=s.id
+      WHERE s.id=r.society_id AND s.service_status IN ('inactive','active') AND sa.status='approved')
+    AND ((r.status='pending' AND r.owner_review_status='pending') OR EXISTS(
+      SELECT 1 FROM resident_unit_request_events e WHERE e.request_id=r.id AND e.society_id=r.society_id
+        AND e.actor_user_id=$1 AND e.action IN ('owner_verified','owner_rejected','owner_changes_requested')))
+  )`;
+  const visibility = societyId
+    ? `r.society_id=$2::uuid AND r.status IN ('pending','changes_requested','approved','rejected')
+       AND (r.relationship='owner' OR r.owner_review_status='approved')`
+    : `$2::uuid IS NULL AND ((r.user_id=$1 AND $3<>'review')
+       OR (${incoming} AND $3<>'mine'))`;
+  const scopeFilter = societyId
+    ? `($3<>'mine' OR r.user_id=$1) AND ($3<>'review' OR
+        (r.user_id<>$1 AND r.status='pending' AND
+          (r.relationship='owner' OR r.owner_review_status='approved')))`
+    : `($3<>'review' OR (r.user_id<>$1 AND r.status='pending' AND r.owner_review_status='pending'))`;
+  const stageFilter = `($4='all' OR (r.relationship='tenant' AND r.status='pending' AND
+    (($4='owner' AND r.owner_review_status='pending') OR ($4='chairman' AND r.owner_review_status='approved'))))`;
   const sql = `
     SELECT r.id, r.society_id AS "societyId", s.name AS "societyName",
            u.wing, u.floor_label AS floor, u.flat_number AS "flatNumber",
@@ -65,7 +98,20 @@ export async function listApplicationInbox(
            a.full_name AS "fullName", a.email, a.phone,
            r.applicant_profile AS "applicantProfile",
            r.applicant_note AS "applicantNote",
-           r.move_in_date::text AS "moveInDate",
+           r.move_in_date::text AS "moveInDate", r.tenancy_end_date::text AS "tenancyEndDate",
+           r.owner_reviewed_at AS "ownerReviewedAt", r.owner_review_note AS "ownerReviewNote",
+           CASE WHEN $2::uuid IS NULL AND r.user_id<>$1 AND r.status IN ('pending','approved') THEN
+             COALESCE((SELECT jsonb_agg(jsonb_build_object(
+               'id',d.id,'name',d.original_filename,'kind',d.kind,'size',d.declared_size_bytes,'version',d.agreement_version)
+               ORDER BY d.created_at,d.id) FROM resident_documents d
+               WHERE d.society_id=r.society_id AND d.status='ready' AND
+                 ((d.request_id=r.id AND d.subject_user_id=r.user_id AND d.kind='identity') OR
+                  (d.tenancy_id=r.tenancy_id AND d.uploaded_by=r.user_id AND d.kind='rental_agreement'
+                   AND NOT EXISTS(SELECT 1 FROM owner_transfers tr
+                     JOIN resident_unit_memberships om ON om.source_request_id=tr.request_id
+                     WHERE om.user_id=$1 AND om.unit_id=r.unit_id AND om.status='active'
+                       AND tr.status='completed' AND tr.completed_at>d.created_at)))), '[]'::jsonb)
+             ELSE '[]'::jsonb END AS "reviewDocuments",
            to_char(r.submitted_at AT TIME ZONE 'UTC',
              'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "submittedAt",
            to_char(r.reviewed_at AT TIME ZONE 'UTC',
@@ -125,37 +171,21 @@ export async function listApplicationInbox(
     JOIN societies s ON s.id = r.society_id
     JOIN society_units u ON u.id = r.unit_id AND u.society_id = r.society_id
     JOIN users a ON a.id = r.user_id
-    WHERE ${
-      societyId
-        ? `r.society_id = $2::uuid AND r.relationship = 'owner'
-           AND r.status IN ('pending', 'changes_requested', 'approved', 'rejected')`
-        : "r.user_id = $1::uuid AND $2::uuid IS NULL"
-    }
+    WHERE ${visibility} AND ${scopeFilter} AND ${stageFilter}
       AND r.deleted_at IS NULL
-      AND ($3 = 'all' OR r.status = $3)
-      AND ($4::uuid IS NULL OR r.id = $4::uuid)
+      AND ($5 = 'all' OR r.status = $5)
+      AND ($6::uuid IS NULL OR r.id = $6)
     ORDER BY CASE WHEN r.status = 'pending' THEN 0 ELSE 1 END,
              r.created_at DESC, r.id DESC
-    LIMIT 21 OFFSET $5`;
+    LIMIT 21 OFFSET $7`;
 
-  const values = [
-    userId, societyId, filters.status, filters.application ?? null,
-    (filters.page - 1) * 20,
-  ];
+  const baseValues = [userId,societyId,filters.scope,filters.stage];
+  const values = [...baseValues,filters.status,filters.application ?? null,(filters.page-1)*20];
   async function load(client: PoolClient) {
     const result = await client.query<InboxApplication>(sql, values);
-    const totals = await client.query<{ status: string; count: number }>(
-      `SELECT r.status, count(*)::integer AS count
-       FROM resident_unit_requests r
-       WHERE ${societyId
-         ? `r.society_id = $2::uuid AND $1::uuid IS NOT NULL
-            AND r.relationship = 'owner'
-            AND r.status IN ('pending', 'changes_requested', 'approved', 'rejected')`
-         : "r.user_id = $1::uuid AND $2::uuid IS NULL"}
-       AND r.deleted_at IS NULL
-       GROUP BY r.status`,
-      [userId, societyId],
-    );
+    const totals = await client.query<{status:string;count:number}>(
+      `SELECT r.status,count(*)::integer AS count FROM resident_unit_requests r
+       WHERE ${visibility} AND ${scopeFilter} AND ${stageFilter} AND r.deleted_at IS NULL GROUP BY r.status`,baseValues);
     const counts: Record<string, number> = {
       all: 0, draft: 0, pending: 0, changes_requested: 0,
       approved: 0, rejected: 0, withdrawn: 0,
